@@ -1,0 +1,54 @@
+# ==============================================================================
+# Binance TR Trading Bot - Git Ignore Rules
+# ==============================================================================
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# IDE / Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Live & Private Configuration (API keys / Secrets are NEVER committed)
+config.yaml
+config.live.yaml
+config.test.yaml
+config-live.yaml
+config-test.yaml
+*.local.yaml
+.env
+
+# Allow Example Configuration Templates to be tracked
+!config.example.yaml
+!config.live.example.yaml
+!config.test.example.yaml
+
+# Runtime Data, Logs, Archives & Reports
+data/*.json
+!data/.gitkeep
+reports/*.html
+reports/*.json
+!reports/.gitkeep
+logs/
+scratch/
+*.zip
+*.log

@@ -1,0 +1,58 @@
+# ==============================================================================
+# Binance TR Al-Sat Botu - Canlı İşlem Yapılandırma Şablonu (config.live.yaml)
+# ==============================================================================
+# Bu dosyayı 'config.live.yaml' olarak kopyalayıp API anahtarlarınızı girin:
+# Windows PowerShell: Copy-Item config.live.example.yaml config.live.yaml
+# Linux/macOS:        cp config.live.example.yaml config.live.yaml
+# ==============================================================================
+
+api:
+  api_key: "BURAYA_BINANCE_TR_API_KEY_GIRINIZ"
+  secret_key: "BURAYA_BINANCE_TR_SECRET_KEY_GIRINIZ"
+  base_url: "https://www.binance.tr"
+  ws_url: "wss://stream-cloud.binance.tr/ws"
+
+auth:
+  enabled: true
+  username: "admin"
+  password: "admin123"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+trading:
+  mode: "live"                     # "live" = Gerçek Binance TR emirleri | "simulation" = Sanal test
+  symbol: "AUTO"                   # "AUTO" = Otomatik radar taraması | örn: "BTC_TRY", "USDT_TRY"
+  auto_select_coin: true           # Otomatik en hareketli coinleri seçip al-sat yap
+  target_coins_count: 5            # Portföyde tutulacak aktif coin sayısı
+  max_open_positions: 5            # Maksimum açık pozisyon sayısı
+  auto_fill_portfolio: true        # Hedef coin sayısına ulaşana kadar otomatik alım yap
+  top_coins_limit: 15              # Radarda taranacak en yüksek hacimli coin adedi
+  budget_per_trade: 200.0          # Her pozisyon için kullanılacak işlem bütçesi (TRY)
+  initial_virtual_balance: 500.0   # Başlangıç referans bakiyesi
+  candidate_observation_seconds: 20 # Aday coini almadan önce gözlem süresi (sn)
+  filter_falling_coins: true       # Düşüş trendindeki coinleri ele
+  only_uptrend: true               # Yalnızca pozitif / yükseliş trendindekileri al
+  min_24h_gain_pct: 0.0            # Asgari 24 saatlik getiri eşiği (%)
+  fee_rate_pct: 0.1                # Komisyon oranı (%)
+
+strategy:
+  active: "adaptive_regime"        # "adaptive_regime" (önerilen) | "rsi_bollinger" | "momentum_ema" | "grid_scalper"
+  take_profit_pct: 2.0             # Kâr Al (%)
+  stop_loss_pct: 1.5               # Zarar Kes (%)
+  trailing_activation_pct: 1.0     # İz süren stop aktivasyon kârı (%)
+  trailing_stop_pct: 1.0           # İz süren stop takip mesafesi (%)
+  cooldown_seconds: 10             # Genel işlem bekleme süresi (sn)
+  symbol_cooldown_seconds: 60      # Aynı coine tekrar girmek için bekleme süresi (sn)
+  rsi_period: 14
+  rsi_oversold: 35.0
+  rsi_overbought: 65.0
+  bollinger_period: 20
+  bollinger_std_dev: 2.0
+  ema_fast: 9
+  ema_slow: 21
+
+test:
+  duration_minutes: 15
+  auto_stop: true

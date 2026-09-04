@@ -1,0 +1,58 @@
+# ==============================================================================
+# Binance TR Al-Sat Botu - Test / Simülasyon Yapılandırma Şablonu (config.test.yaml)
+# ==============================================================================
+# Bu dosyayı 'config.test.yaml' olarak kopyalayarak güvenli testler yapabilirsiniz:
+# Windows PowerShell: Copy-Item config.test.example.yaml config.test.yaml
+# Linux/macOS:        cp config.test.example.yaml config.test.yaml
+# ==============================================================================
+
+api:
+  api_key: ""                      # Simülasyon modu için API anahtarı gerekmez
+  secret_key: ""
+  base_url: "https://www.binance.tr"
+  ws_url: "wss://stream-cloud.binance.tr/ws"
+
+auth:
+  enabled: true
+  username: "admin"
+  password: "admin123"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+trading:
+  mode: "simulation"               # Simülasyon modu (Gerçek bakiye kullanılmaz)
+  symbol: "AUTO"                   # "AUTO" = Radar taraması
+  auto_select_coin: true           # Otomatik en hareketli coinleri seç
+  target_coins_count: 5            # Portföy sepet hedefi
+  max_open_positions: 5            # Maksimum eşzamanlı pozisyon
+  auto_fill_portfolio: true        # Sepeti otomatik doldur
+  top_coins_limit: 15              # Taranacak coin limiti
+  budget_per_trade: 2000.0         # Sanal işlem tutarı (TRY)
+  initial_virtual_balance: 10000.0 # Başlangıç sanal kasası (TRY)
+  candidate_observation_seconds: 45 # Aday gözlem süresi (sn)
+  filter_falling_coins: true       # Düşenleri engelle
+  only_uptrend: true               # Sadece yükseliş trendi
+  min_24h_gain_pct: 0.0            # Asgari 24 saatlik getiri eşiği (%)
+  fee_rate_pct: 0.1                # Sanal komisyon oranı (%)
+
+strategy:
+  active: "adaptive_regime"        # Strateji
+  take_profit_pct: 1.8             # Kâr Al (%)
+  stop_loss_pct: 1.0               # Zarar Kes (%)
+  trailing_activation_pct: 0.8     # Trailing Stop Tetiklenme Eşiği (%)
+  trailing_stop_pct: 0.6           # Trailing Stop Mesafesi (%)
+  cooldown_seconds: 10
+  symbol_cooldown_seconds: 60
+  rsi_period: 14
+  rsi_oversold: 35.0
+  rsi_overbought: 65.0
+  bollinger_period: 20
+  bollinger_std_dev: 2.0
+  ema_fast: 9
+  ema_slow: 21
+
+test:
+  duration_minutes: 15
+  auto_stop: true
