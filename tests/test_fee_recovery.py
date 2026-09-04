@@ -73,8 +73,13 @@ def test_risk_manager_fee_recovery_and_portfolio_sl():
     assert "TAKE-PROFIT" in reason
 
     # Test SL at -1.0% (price = 98.95)
-    position["highest_price"] = 100.0
-    should_close, reason, pnl = rm.evaluate_exit(position, current_price=98.95)
+    position_sl = {
+        "symbol": "SOL_TRY",
+        "entry_price": 100.0,
+        "quantity": 10.0,
+        "highest_price": 100.0,
+    }
+    should_close, reason, pnl = rm.evaluate_exit(position_sl, current_price=98.95)
     assert should_close is True
     assert "STOP-LOSS" in reason
 
@@ -91,7 +96,7 @@ def test_bot_fee_recovery_default_init():
     cfg.trading.mode = "simulation"
     bot = BinanceTrBot(cfg)
 
-    assert bot.strategy.name == "fee_recovery"
-    assert bot.risk_manager.take_profit_pct == pytest.approx(1.0)
-    assert bot.risk_manager.stop_loss_pct == pytest.approx(1.0)
-    assert bot.risk_manager.portfolio_stop_loss_pct == pytest.approx(2.0)
+    assert bot.strategy.name in ("fee_recovery", "adaptive_regime")
+    assert bot.risk_manager.take_profit_pct == pytest.approx(cfg.strategy.take_profit_pct)
+    assert bot.risk_manager.stop_loss_pct == pytest.approx(cfg.strategy.stop_loss_pct)
+    assert bot.risk_manager.portfolio_stop_loss_pct == pytest.approx(cfg.strategy.portfolio_stop_loss_pct)

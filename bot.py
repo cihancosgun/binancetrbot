@@ -52,13 +52,13 @@ class BinanceTrBot:
             quote_asset="TRY",
             min_volume_try=getattr(self.config.trading, "min_24h_volume_try", 5000000.0)
         )
-        obs_sec = getattr(self.config.trading, "candidate_observation_seconds", 45)
+        obs_sec = getattr(self.config.trading, "candidate_observation_seconds", 15)
         self.scanner.watchlist.min_observation_seconds = obs_sec
-        obs_gain = getattr(self.config.trading, "min_observation_gain_pct", 1.5)
+        obs_gain = getattr(self.config.trading, "min_observation_gain_pct", 0.50)
         self.scanner.watchlist.min_gain_pct = obs_gain
-        obs_cd = getattr(self.config.trading, "candidate_timeout_cooldown_seconds", 5)
+        obs_cd = getattr(self.config.trading, "candidate_timeout_cooldown_seconds", 10)
         self.scanner.watchlist.timeout_cooldown_seconds = obs_cd
-        obs_burst = getattr(self.config.trading, "candidate_min_burst_count", 2)
+        obs_burst = getattr(self.config.trading, "candidate_min_burst_count", 1)
         self.scanner.watchlist.min_burst_count = obs_burst
         self.market_engines: Dict[str, MarketDataEngine] = {}
         default_sym = "SOL_TRY" if self.config.trading.symbol == "AUTO" else self.config.trading.symbol
@@ -67,14 +67,15 @@ class BinanceTrBot:
             take_profit_pct=self.config.strategy.take_profit_pct,
             stop_loss_pct=self.config.strategy.stop_loss_pct,
             trailing_stop_pct=self.config.strategy.trailing_stop_pct,
-            trailing_activation_pct=getattr(self.config.strategy, "trailing_activation_pct", 0.80),
-            cooldown_seconds=self.config.strategy.cooldown_seconds,
-            symbol_cooldown_seconds=getattr(self.config.strategy, "symbol_cooldown_seconds", 90),
+            trailing_activation_pct=getattr(self.config.strategy, "trailing_activation_pct", 1.0),
+            breakeven_trigger_pct=getattr(self.config.strategy, "breakeven_trigger_pct", 0.90),
+            cooldown_seconds=getattr(self.config.strategy, "cooldown_seconds", 5),
+            symbol_cooldown_seconds=getattr(self.config.strategy, "symbol_cooldown_seconds", 30),
+            loss_cooldown_seconds=getattr(self.config.strategy, "loss_cooldown_seconds", 180),
             max_open_positions=self.config.trading.max_open_positions,
             fee_rate_pct=self.config.trading.fee_rate_pct,
-            portfolio_stop_loss_pct=getattr(self.config.strategy, "portfolio_stop_loss_pct", 2.0),
-            prevent_rebuy_churn=getattr(self.config.trading, "prevent_rebuy_churn", True),
-            loss_cooldown_seconds=getattr(self.config.strategy, "loss_cooldown_seconds", 300),
+            portfolio_stop_loss_pct=getattr(self.config.strategy, "portfolio_stop_loss_pct", 2.5),
+            prevent_rebuy_churn=getattr(self.config.trading, "prevent_rebuy_churn", False),
         )
         self.simulator = SimulatorEngine(
             initial_balance=self.config.trading.initial_virtual_balance,
@@ -462,13 +463,14 @@ class BinanceTrBot:
 
                 per_coin_budget = min(self.config.trading.budget_per_trade, available_cash / max(1, slots_needed))
 
-                for pair in top_pairs:
+                # Radarı en yüksek hacimli/skorlu taze adaylara odakla (tüm pazarı tek saniyede spamlamaz)
+                candidate_pairs = [p for p in top_pairs if p["symbol"] not in open_symbols][:max(8, slots_needed * 2)]
+
+                for pair in candidate_pairs:
                     if slots_needed <= 0:
                         break
 
                     sym = pair["symbol"]
-                    if sym in open_symbols:
-                        continue
 
                     can_buy_slot, _ = self.risk_manager.can_open_position(open_count, is_basket_filling=True, symbol=sym)
                     if not can_buy_slot:

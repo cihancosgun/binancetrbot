@@ -284,6 +284,8 @@ function updateUI(data) {
       const pnlColor = pos.unrealized_pnl >= 0 ? "var(--success)" : "var(--danger)";
       const pnlSign = pos.unrealized_pnl > 0 ? "+" : "";
       const priceDecimals = pos.current_price < 1 ? 6 : 4;
+      const badgeText = pos.breakeven_locked ? "🛡️ BREAKEVEN KİLİTLİ" : "AKTİF SEPET";
+      const badgeStyle = pos.breakeven_locked ? "background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.4);" : "";
       return `
         <tr>
           <td><strong>${pos.symbol}</strong></td>
@@ -291,7 +293,7 @@ function updateUI(data) {
           <td>${pos.current_price.toFixed(priceDecimals)} TL</td>
           <td>${pos.quantity.toFixed(4)}</td>
           <td style="color: ${pnlColor}; font-weight: bold;">${pnlSign}${pos.unrealized_pnl.toFixed(2)} TL (${pnlSign}${pos.unrealized_pnl_pct.toFixed(2)}%)</td>
-          <td><span class="badge badge-running">AKTİF SEPET</span></td>
+          <td><span class="badge badge-running" style="${badgeStyle}">${badgeText}</span></td>
           <td style="text-align: right;">
             <button type="button" class="badge" style="cursor: pointer; background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.4); font-size: 11px; padding: 2px 8px; font-weight: 600;" onclick="closePosition('${pos.position_id}', '${pos.symbol}')">
               ❌ Sat

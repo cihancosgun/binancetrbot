@@ -16,16 +16,16 @@ class TradingConfig:
     min_24h_volume_try: float = 5000000.0 # En az 5 Milyon TL 24s hacim (sığ meme coinleri ele)
     initial_virtual_balance: float = 10000.0
     budget_per_trade: float = 2000.0         # Her bir coine ayrılacak bütçe (TL)
-    candidate_observation_seconds: int = 45 # Aday coini almadan önce 45 saniye gözlemleme süresi (sn)
-    min_observation_gain_pct: float = 1.0    # Aday coin için gözlem penceresinde gereken min yükseliş ivmesi (%1.0)
-    candidate_min_burst_count: int = 2       # 45s içinde onay için gereken en az patlama/yükseliş dalgası sayısı
-    candidate_timeout_cooldown_seconds: int = 5 # 45s içinde ivme yakalayamayan coinin dinlenme süresi (sn)
+    candidate_observation_seconds: int = 15 # Aday coini almadan önce 15 saniye gözlemleme süresi (sn)
+    min_observation_gain_pct: float = 0.50   # Aday coin için gözlem penceresinde gereken min yükseliş ivmesi (%0.50)
+    candidate_min_burst_count: int = 1       # Onay için gereken ivme sayısı
+    candidate_timeout_cooldown_seconds: int = 10 # İvme yakalayamayan coinin dinlenme süresi (sn)
     filter_falling_coins: bool = True        # Sürekli tepe aşağı düşen coinleri engelleme
     only_uptrend: bool = True                # Radarda sadece pozitif/yükseliş trendindeki coinleri tara
     min_24h_gain_pct: float = 0.0            # En az 24 saatlik getiri eşiği (%0.0)
     fee_rate_pct: float = 0.1
-    prevent_rebuy_churn: bool = True         # Satıp hemen aynı coini alacaksa boşuna komisyon ödememe (Devir Koruması)
-    loss_cooldown_seconds: int = 300         # Zarar kesilen coine 5 dk (300s) ceza beklemesi
+    prevent_rebuy_churn: bool = False        # Doğrudan kâr satışı ve kâr realize etme
+    loss_cooldown_seconds: int = 180         # Zarar kesilen coine 3 dk (180s) ceza beklemesi
 
 @dataclass
 class TestConfig:
@@ -34,16 +34,17 @@ class TestConfig:
 
 @dataclass
 class StrategyConfig:
-    active: str = "fee_recovery"             # Komisyon Oranını Kurtaran Strateji (Varsayılan)
-    take_profit_pct: float = 1.0             # Kâr Al (%1.00)
-    stop_loss_pct: float = 1.0               # Zarar Kes (%1.00)
+    active: str = "adaptive_regime"          # Piyasa Rejimi ve Quant Momentum Stratejisi
+    take_profit_pct: float = 2.0             # Kâr Al (+%2.00)
+    stop_loss_pct: float = 1.0               # Zarar Kes (-%1.00)
     trailing_stop_pct: float = 0.50          # İz Süren Stop Mesafesi (%0.50)
-    trailing_activation_pct: float = 0.80    # Trailing Stop Devreye Girme Eşiği (%0.80)
-    portfolio_stop_loss_pct: float = 2.0     # Tüm Portföy Zarar Kes Eşiği (%2.00)
+    trailing_activation_pct: float = 1.0     # Trailing Stop Devreye Girme Eşiği (+%1.00)
+    breakeven_trigger_pct: float = 0.90      # Breakeven Kilit Eşiği (+%0.90 kârda stop maliyete çekilir)
+    portfolio_stop_loss_pct: float = 2.5     # Tüm Portföy Zarar Kes Eşiği (%2.50)
     fee_multiplier: float = 2.0              # Komisyon Çarpanı
-    cooldown_seconds: int = 10
-    symbol_cooldown_seconds: int = 90        # Aynı coine tekrar girmek için bekleme süresi (90 sn)
-    loss_cooldown_seconds: int = 300         # Zarar kesilen coine ceza süresi (300 sn)
+    cooldown_seconds: int = 5                # Alımlar arası bekleme süresi (5 sn)
+    symbol_cooldown_seconds: int = 30        # Aynı coine tekrar girmek için bekleme süresi (30 sn)
+    loss_cooldown_seconds: int = 180         # Zarar kesilen coine ceza süresi (180 sn)
     # Additional optional strategy parameters
     rsi_period: int = 14
     rsi_oversold: float = 42.0
