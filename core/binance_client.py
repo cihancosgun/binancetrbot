@@ -5,6 +5,7 @@ import requests
 import json
 from urllib.parse import urlencode
 from typing import Dict, Any, Optional, List
+from requests.adapters import HTTPAdapter
 
 class BinanceTrClient:
     """
@@ -16,6 +17,9 @@ class BinanceTrClient:
         self.secret_key = secret_key
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=1)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.session.headers.update({
             "User-Agent": "BinanceTrBot/1.0",
             "Content-Type": "application/x-www-form-urlencoded",
@@ -48,11 +52,11 @@ class BinanceTrClient:
 
         try:
             if method.upper() == "GET":
-                response = self.session.get(url, params=params, timeout=10)
+                response = self.session.get(url, params=params, timeout=2.5)
             elif method.upper() == "POST":
-                response = self.session.post(url, data=params, timeout=10)
+                response = self.session.post(url, data=params, timeout=2.5)
             elif method.upper() == "DELETE":
-                response = self.session.delete(url, params=params, timeout=10)
+                response = self.session.delete(url, params=params, timeout=2.5)
             else:
                 raise ValueError(f"Desteklenmeyen HTTP metodu: {method}")
 
@@ -94,16 +98,16 @@ class BinanceTrClient:
     def get_klines(self, symbol: str, interval: str = "1m", limit: int = 100) -> List[Any]:
         """
         Mum verileri (candlesticks):
-        Binance TR apidocs uyarınca kline verileri api.binance.me veya api.binance.com üzerinden çekilir.
+        Hızlı ve stabil api.binance.com uç noktası üzerinden çekilir.
         """
         clean_symbol = symbol.replace("_", "").upper()
         urls = [
-            f"https://api.binance.me/api/v1/klines?symbol={clean_symbol}&interval={interval}&limit={limit}",
             f"https://api.binance.com/api/v3/klines?symbol={clean_symbol}&interval={interval}&limit={limit}",
+            f"https://api.binance.me/api/v1/klines?symbol={clean_symbol}&interval={interval}&limit={limit}",
         ]
         for url in urls:
             try:
-                resp = self.session.get(url, timeout=5)
+                resp = self.session.get(url, timeout=2.0)
                 if resp.status_code == 200:
                     data = resp.json()
                     if isinstance(data, list) and len(data) > 0:

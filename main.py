@@ -53,7 +53,7 @@ def run_cli_session(duration_minutes: int, strategy: Optional[str] = None, symbo
     if bot.last_report:
         print(f"📊 Rapor Dosyası: {bot.last_report.get('html')}")
 
-def run_web_dashboard(host: str = "0.0.0.0", port: int = 8000, config_path: Optional[str] = None, mode: str = "test"):
+def run_web_dashboard(host: str = "127.0.0.1", port: int = 8000, config_path: Optional[str] = None, mode: str = "test"):
     """
     Modern Web Takip Panelini belirtilen mod veya yapılandırma ile başlatır.
     """
@@ -105,8 +105,8 @@ def main():
         "--strategy",
         type=str,
         default=None,
-        choices=["adaptive_regime", "rsi_bollinger", "momentum_ema", "grid_scalper", "quick_test_scalper"],
-        help="Aktif ticaret stratejisi"
+        choices=["fee_recovery", "adaptive_regime", "rsi_bollinger", "momentum_ema", "grid_scalper", "quick_test_scalper"],
+        help="Aktif ticaret stratejisi (varsayılan: fee_recovery - Komisyon Kurtaran)"
     )
     parser.add_argument(
         "--symbol",
@@ -123,8 +123,8 @@ def main():
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
-        help="Web sunucu host adresi (varsayılan: 0.0.0.0)"
+        default="127.0.0.1",
+        help="Web sunucu host adresi (varsayılan: 127.0.0.1)"
     )
 
     args = parser.parse_args()

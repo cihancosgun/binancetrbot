@@ -19,53 +19,62 @@ class MarketDataEngine:
         self.last_ask: float = 0.0
         self.last_spread_pct: float = 0.0
         self.last_update_time: float = 0.0
+        self.last_klines_update_time: float = 0.0
+        self.cache_ttl_seconds: float = 0.8
+        self.klines_cache_ttl_seconds: float = 12.0
+        self._cached_snapshot: Optional[Dict[str, Any]] = None
 
-    def update_market_state(self) -> Optional[Dict[str, Any]]:
+    def update_market_state(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """
         Binance TR'den anlık derinlik ve fiyatı çeker, geçmişi günceller.
+        Önbellek mekanizması ile sunucuyu ve arayüzü kilitlemeyi/kasmayı engeller.
         """
+        now = time.time()
+        if not force and (now - self.last_update_time < self.cache_ttl_seconds) and self._cached_snapshot:
+            return self._cached_snapshot
+
         prices = self.client.get_best_prices(self.symbol)
         if not prices:
-            return None
+            return self._cached_snapshot
 
         self.last_bid = prices["bid"]
         self.last_ask = prices["ask"]
-        # Gerçekçi değerleme: Elimizdeki pozisyonu nakde çevirebileceğimiz gerçek fiyat
-        # tahtadaki en iyi alıcı (bid) fiyatıdır. Bu hem Binance TR hem de Radar ile birebir eşleşir.
         self.last_price = prices["bid"] if prices["bid"] > 0 else prices["mid"]
         self.last_spread_pct = prices["spread_pct"]
-        self.last_update_time = time.time()
+        self.last_update_time = now
 
         self.price_history.append(self.last_price)
         if len(self.price_history) > 500:
             self.price_history.pop(0)
 
-        # Mum verilerini çek (OHLC)
-        klines = self.client.get_klines(self.symbol, interval="1m", limit=50)
-        if klines:
-            closes, highs, lows = [], [], []
-            for k in klines:
-                if isinstance(k, list) and len(k) >= 5:
-                    # Binance TR / Binance standardı: [openTime, open, high, low, close, volume, ...]
-                    highs.append(float(k[2]))
-                    lows.append(float(k[3]))
-                    closes.append(float(k[4]))
-                elif isinstance(k, dict) and "close" in k:
-                    c_val = float(k["close"])
-                    highs.append(float(k.get("high", c_val)))
-                    lows.append(float(k.get("low", c_val)))
-                    closes.append(c_val)
-            if closes:
-                self.candle_closes = closes
-                self.candle_highs = highs
-                self.candle_lows = lows
-        else:
-            if len(self.price_history) >= 2:
-                self.candle_closes = self.price_history[-50:]
-                self.candle_highs = self.price_history[-50:]
-                self.candle_lows = self.price_history[-50:]
+        # Mum verilerini her saniye değil, 12 saniyede bir çekerek gereksiz ağ yükünü ve gecikmeyi önle
+        if (now - self.last_klines_update_time >= self.klines_cache_ttl_seconds) or not self.candle_closes:
+            klines = self.client.get_klines(self.symbol, interval="1m", limit=50)
+            if klines:
+                closes, highs, lows = [], [], []
+                for k in klines:
+                    if isinstance(k, list) and len(k) >= 5:
+                        highs.append(float(k[2]))
+                        lows.append(float(k[3]))
+                        closes.append(float(k[4]))
+                    elif isinstance(k, dict) and "close" in k:
+                        c_val = float(k["close"])
+                        highs.append(float(k.get("high", c_val)))
+                        lows.append(float(k.get("low", c_val)))
+                        closes.append(c_val)
+                if closes:
+                    self.candle_closes = closes
+                    self.candle_highs = highs
+                    self.candle_lows = lows
+                    self.last_klines_update_time = now
+            else:
+                if len(self.price_history) >= 2:
+                    self.candle_closes = self.price_history[-50:]
+                    self.candle_highs = self.price_history[-50:]
+                    self.candle_lows = self.price_history[-50:]
 
-        return self.get_snapshot()
+        self._cached_snapshot = self.get_snapshot()
+        return self._cached_snapshot
 
     def calculate_rsi(self, prices: List[float], period: int = 14) -> float:
         """

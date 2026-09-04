@@ -10,7 +10,22 @@ from typing import Optional, Dict, Any
 from bot import BinanceTrBot
 from config import load_config, save_config
 
-app = FastAPI(title="Binance TR Al-Sat Botu")
+from contextlib import asynccontextmanager
+
+# Bot örneğini başlat
+bot_instance = BinanceTrBot()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    bot_instance.is_running = False
+    if hasattr(bot_instance, "client") and hasattr(bot_instance.client, "session"):
+        try:
+            bot_instance.client.session.close()
+        except Exception:
+            pass
+
+app = FastAPI(title="Binance TR Al-Sat Botu", lifespan=lifespan)
 
 # Aktif oturum token'ları havuzu
 active_sessions: set[str] = set()
@@ -30,44 +45,28 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/reports", StaticFiles(directory=REPORTS_DIR, html=True), name="reports")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# Bot örneğini başlat
-bot_instance = BinanceTrBot()
-
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    # Eğer yapılandırmada kimlik doğrulama kapalıysa doğrudan devam et
     auth_cfg = getattr(bot_instance.config, "auth", None)
     if not auth_cfg or not getattr(auth_cfg, "enabled", True):
         return await call_next(request)
 
     path = request.url.path
 
-    # Herkese açık rotalar (statik dosyalar, login sayfası ve login API'si)
     if (
         path.startswith("/static")
         or path in ("/login", "/api/login", "/favicon.ico")
     ):
         return await call_next(request)
 
-    # Oturum doğrulaması
     token = request.cookies.get("session_token")
     if token and token in active_sessions:
         return await call_next(request)
 
-    # Kimlik doğrulanmamışsa: API için 401, sayfalar için login'e yönlendir
     if path.startswith("/api/"):
         return JSONResponse(status_code=401, content={"status": "error", "message": "Giriş yapmanız gerekiyor."})
 
     return RedirectResponse(url="/login", status_code=303)
-
-@app.on_event("shutdown")
-def shutdown_event():
-    bot_instance.is_running = False
-    if hasattr(bot_instance, "client") and hasattr(bot_instance.client, "session"):
-        try:
-            bot_instance.client.session.close()
-        except Exception:
-            pass
 
 class StartRequest(BaseModel):
     duration_minutes: Optional[int] = 15
@@ -77,6 +76,8 @@ class StartRequest(BaseModel):
     auto_select_coin: Optional[bool] = None
     target_coins_count: Optional[int] = None
     candidate_observation_seconds: Optional[int] = None
+    min_observation_gain_pct: Optional[float] = None
+    candidate_min_burst_count: Optional[int] = None
     trailing_activation_pct: Optional[float] = None
     symbol_cooldown_seconds: Optional[int] = None
     only_uptrend: Optional[bool] = None
@@ -96,6 +97,8 @@ class ConfigUpdateRequest(BaseModel):
     target_coins_count: Optional[int] = None
     auto_fill_portfolio: Optional[bool] = None
     candidate_observation_seconds: Optional[int] = None
+    min_observation_gain_pct: Optional[float] = None
+    candidate_min_burst_count: Optional[int] = None
     filter_falling_coins: Optional[bool] = None
     only_uptrend: Optional[bool] = None
 
@@ -171,6 +174,12 @@ async def start_bot(req: StartRequest):
     if req.candidate_observation_seconds is not None:
         bot_instance.config.trading.candidate_observation_seconds = req.candidate_observation_seconds
         bot_instance.scanner.watchlist.min_observation_seconds = req.candidate_observation_seconds
+    if req.min_observation_gain_pct is not None:
+        bot_instance.config.trading.min_observation_gain_pct = req.min_observation_gain_pct
+        bot_instance.scanner.watchlist.min_gain_pct = req.min_observation_gain_pct
+    if req.candidate_min_burst_count is not None:
+        bot_instance.config.trading.candidate_min_burst_count = req.candidate_min_burst_count
+        bot_instance.scanner.watchlist.min_burst_count = req.candidate_min_burst_count
     if req.trailing_activation_pct is not None:
         bot_instance.config.strategy.trailing_activation_pct = req.trailing_activation_pct
         bot_instance.risk_manager.trailing_activation_pct = req.trailing_activation_pct
@@ -252,6 +261,12 @@ async def update_config(req: ConfigUpdateRequest):
     if req.candidate_observation_seconds is not None:
         cfg.trading.candidate_observation_seconds = req.candidate_observation_seconds
         bot_instance.scanner.watchlist.min_observation_seconds = req.candidate_observation_seconds
+    if req.min_observation_gain_pct is not None:
+        cfg.trading.min_observation_gain_pct = req.min_observation_gain_pct
+        bot_instance.scanner.watchlist.min_gain_pct = req.min_observation_gain_pct
+    if req.candidate_min_burst_count is not None:
+        cfg.trading.candidate_min_burst_count = req.candidate_min_burst_count
+        bot_instance.scanner.watchlist.min_burst_count = req.candidate_min_burst_count
     if req.filter_falling_coins is not None:
         cfg.trading.filter_falling_coins = req.filter_falling_coins
     if req.only_uptrend is not None:

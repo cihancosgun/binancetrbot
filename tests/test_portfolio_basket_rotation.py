@@ -13,8 +13,9 @@ def test_portfolio_basket_rotation():
     cfg.trading.symbol = "AUTO"
     cfg.trading.auto_select_coin = True
     cfg.trading.target_coins_count = 5
-    cfg.trading.max_open_positions = 5
     cfg.trading.auto_fill_portfolio = True
+    cfg.trading.require_strict_buy_signal = False
+    cfg.trading.min_24h_volume_try = 0.0
     cfg.trading.initial_virtual_balance = 10000.0
     cfg.trading.budget_per_trade = 2000.0
     cfg.trading.candidate_observation_seconds = 0

@@ -10,15 +10,22 @@ class TradingConfig:
     auto_select_coin: bool = True    # Otomatik en hareketli coinleri bul ve al-sat yap
     target_coins_count: int = 5      # Portföyde daima tutulacak en az farklı coin sayısı
     max_open_positions: int = 5      # Aynı anda açık olabilecek maksimum pozisyon
-    auto_fill_portfolio: bool = True # 5 coin tamamlanana kadar otomatik olarak farklı coinler al
-    top_coins_limit: int = 15        # Taranacak en hareketli coin havuzu
+    auto_fill_portfolio: bool = False # Sadece strateji BUY sinyali verdiğinde al (acele doldurma)
+    require_strict_buy_signal: bool = True # Strateji teyidi olmadan işlem açmama
+    top_coins_limit: int = 0         # Taranacak coin havuzu (0 = Tüm Binance TR TRY çiftlerini tara ve rotasyon yap)
+    min_24h_volume_try: float = 5000000.0 # En az 5 Milyon TL 24s hacim (sığ meme coinleri ele)
     initial_virtual_balance: float = 10000.0
     budget_per_trade: float = 2000.0         # Her bir coine ayrılacak bütçe (TL)
-    candidate_observation_seconds: int = 45 # Aday coini almadan önce en az takip etme süresi (sn)
+    candidate_observation_seconds: int = 45 # Aday coini almadan önce 45 saniye gözlemleme süresi (sn)
+    min_observation_gain_pct: float = 1.0    # Aday coin için gözlem penceresinde gereken min yükseliş ivmesi (%1.0)
+    candidate_min_burst_count: int = 2       # 45s içinde onay için gereken en az patlama/yükseliş dalgası sayısı
+    candidate_timeout_cooldown_seconds: int = 5 # 45s içinde ivme yakalayamayan coinin dinlenme süresi (sn)
     filter_falling_coins: bool = True        # Sürekli tepe aşağı düşen coinleri engelleme
     only_uptrend: bool = True                # Radarda sadece pozitif/yükseliş trendindeki coinleri tara
     min_24h_gain_pct: float = 0.0            # En az 24 saatlik getiri eşiği (%0.0)
     fee_rate_pct: float = 0.1
+    prevent_rebuy_churn: bool = True         # Satıp hemen aynı coini alacaksa boşuna komisyon ödememe (Devir Koruması)
+    loss_cooldown_seconds: int = 300         # Zarar kesilen coine 5 dk (300s) ceza beklemesi
 
 @dataclass
 class TestConfig:
@@ -27,16 +34,19 @@ class TestConfig:
 
 @dataclass
 class StrategyConfig:
-    active: str = "adaptive_regime"          # Hibrit Piyasa Rejimi (Önerilen)
-    take_profit_pct: float = 1.8             # Kâr Al (%1.8)
-    stop_loss_pct: float = 1.0               # Zarar Kes (%1.0)
-    trailing_stop_pct: float = 0.6           # İz Süren Stop Mesafesi (%0.6)
-    trailing_activation_pct: float = 0.8     # Trailing Stop'un devreye girmesi için asgari kâr eşiği (%0.80)
-    cooldown_seconds: int = 20
-    symbol_cooldown_seconds: int = 60        # Aynı coine tekrar girmek için bekleme süresi (sn)
+    active: str = "fee_recovery"             # Komisyon Oranını Kurtaran Strateji (Varsayılan)
+    take_profit_pct: float = 1.0             # Kâr Al (%1.00)
+    stop_loss_pct: float = 1.0               # Zarar Kes (%1.00)
+    trailing_stop_pct: float = 0.50          # İz Süren Stop Mesafesi (%0.50)
+    trailing_activation_pct: float = 0.80    # Trailing Stop Devreye Girme Eşiği (%0.80)
+    portfolio_stop_loss_pct: float = 2.0     # Tüm Portföy Zarar Kes Eşiği (%2.00)
+    fee_multiplier: float = 2.0              # Komisyon Çarpanı
+    cooldown_seconds: int = 10
+    symbol_cooldown_seconds: int = 90        # Aynı coine tekrar girmek için bekleme süresi (90 sn)
+    loss_cooldown_seconds: int = 300         # Zarar kesilen coine ceza süresi (300 sn)
     # Additional optional strategy parameters
     rsi_period: int = 14
-    rsi_oversold: float = 35.0
+    rsi_oversold: float = 42.0
     rsi_overbought: float = 65.0
     bollinger_period: int = 20
     bollinger_std_dev: float = 2.0
@@ -52,7 +62,7 @@ class ApiConfig:
 
 @dataclass
 class ServerConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
 
 @dataclass
@@ -175,11 +185,16 @@ def save_config(config: BotConfig, config_path: Optional[str] = None) -> None:
             "initial_virtual_balance": config.trading.initial_virtual_balance,
             "budget_per_trade": config.trading.budget_per_trade,
             "max_open_positions": config.trading.max_open_positions,
+            "min_24h_volume_try": getattr(config.trading, "min_24h_volume_try", 5000000.0),
             "candidate_observation_seconds": getattr(config.trading, "candidate_observation_seconds", 45),
+            "min_observation_gain_pct": getattr(config.trading, "min_observation_gain_pct", 1.0),
+            "candidate_min_burst_count": getattr(config.trading, "candidate_min_burst_count", 2),
+            "candidate_timeout_cooldown_seconds": getattr(config.trading, "candidate_timeout_cooldown_seconds", 5),
             "filter_falling_coins": getattr(config.trading, "filter_falling_coins", True),
             "only_uptrend": getattr(config.trading, "only_uptrend", True),
             "min_24h_gain_pct": getattr(config.trading, "min_24h_gain_pct", 0.0),
             "fee_rate_pct": config.trading.fee_rate_pct,
+            "prevent_rebuy_churn": getattr(config.trading, "prevent_rebuy_churn", True),
         },
         "test": {
             "duration_minutes": config.test.duration_minutes,
@@ -190,7 +205,9 @@ def save_config(config: BotConfig, config_path: Optional[str] = None) -> None:
             "take_profit_pct": config.strategy.take_profit_pct,
             "stop_loss_pct": config.strategy.stop_loss_pct,
             "trailing_stop_pct": config.strategy.trailing_stop_pct,
-            "trailing_activation_pct": getattr(config.strategy, "trailing_activation_pct", 0.8),
+            "trailing_activation_pct": getattr(config.strategy, "trailing_activation_pct", 0.20),
+            "portfolio_stop_loss_pct": getattr(config.strategy, "portfolio_stop_loss_pct", 2.0),
+            "fee_multiplier": getattr(config.strategy, "fee_multiplier", 2.0),
             "cooldown_seconds": config.strategy.cooldown_seconds,
             "symbol_cooldown_seconds": getattr(config.strategy, "symbol_cooldown_seconds", 60),
             "rsi_period": config.strategy.rsi_period,

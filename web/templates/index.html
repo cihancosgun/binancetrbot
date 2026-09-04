@@ -70,7 +70,7 @@
           <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
             Binance TR'de anlık en yüksek dalgalanma (volatilite) ve hacme sahip coinler:
           </p>
-          <div id="radar-coins-list" style="display: flex; flex-direction: column; gap: 6px;">
+          <div id="radar-coins-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 4px;">
             <div style="color: var(--text-muted); font-size: 12px;">Radar taranıyor...</div>
           </div>
         </div>
@@ -118,7 +118,8 @@
           <div class="form-group">
             <label for="select-strategy">Aktif Algoritmik Strateji</label>
             <select id="select-strategy">
-              <option value="adaptive_regime" selected>🧠 Hibrit Piyasa Rejimi (Önerilen - Trend/Yatay/Savunma)</option>
+              <option value="fee_recovery" selected>🎯 Komisyon Kurtaran Strateji (Binance TR Komisyon x2 Kâr / Zarar & %2 Portföy SL)</option>
+              <option value="adaptive_regime">🧠 Hibrit Piyasa Rejimi (Trend/Yatay/Savunma)</option>
               <option value="quick_test_scalper">⚡ Hızlı Test Scalper (15-20 Dk Hızlı Test)</option>
               <option value="rsi_bollinger">RSI + Bollinger Scalper (Dip Al / Tepe Sat)</option>
               <option value="momentum_ema">Momentum EMA Kesişimi (Trend Takibi)</option>
@@ -152,9 +153,9 @@
 
           <div class="form-group" style="background: rgba(16, 185, 129, 0.08); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.25);">
             <label for="input-obs-seconds" style="font-weight: 600; color: #6ee7b7;">⏱️ Aday Coin Gözlem Süresi (Saniye)</label>
-            <input type="number" id="input-obs-seconds" value="45" min="5" max="180">
+            <input type="number" id="input-obs-seconds" value="45" min="0" max="180">
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-              Bot hareketli coini hemen almaz; en az bu süre kadar fiyat eğilimini izler. Tepe aşağı iniyorsa sepete eklemez, dengelenip toparlananları seçer.
+              Bot hareketli coini hemen almaz; 45 saniye boyunca fiyat ivmesini ve yönünü izler. Tepe aşağı iniyorsa engeller, toparlanıp yükselenleri seçer.
             </div>
           </div>
 
@@ -174,7 +175,7 @@
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
             <div class="form-group">
               <label for="input-tp">Kâr Al (TP %)</label>
-              <input type="number" id="input-tp" value="1.8" step="0.1">
+              <input type="number" id="input-tp" value="1.0" step="0.1">
             </div>
             <div class="form-group">
               <label for="input-sl">Zarar Kes (SL %)</label>

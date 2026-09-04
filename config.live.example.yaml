@@ -1,10 +1,6 @@
 # ==============================================================================
 # Binance TR Al-Sat Botu - Canlı İşlem Yapılandırma Şablonu (config.live.yaml)
 # ==============================================================================
-# Bu dosyayı 'config.live.yaml' olarak kopyalayıp API anahtarlarınızı girin:
-# Windows PowerShell: Copy-Item config.live.example.yaml config.live.yaml
-# Linux/macOS:        cp config.live.example.yaml config.live.yaml
-# ==============================================================================
 
 api:
   api_key: "BURAYA_BINANCE_TR_API_KEY_GIRINIZ"
@@ -18,7 +14,7 @@ auth:
   password: "admin123"
 
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8000
 
 trading:
@@ -27,26 +23,35 @@ trading:
   auto_select_coin: true           # Otomatik en hareketli coinleri seçip al-sat yap
   target_coins_count: 5            # Portföyde tutulacak aktif coin sayısı
   max_open_positions: 5            # Maksimum açık pozisyon sayısı
-  auto_fill_portfolio: true        # Hedef coin sayısına ulaşana kadar otomatik alım yap
+  auto_fill_portfolio: false       # Sadece teknik strateji BUY sinyali verdiğinde al
+  require_strict_buy_signal: true  # Strateji teyidi olmadan acele alım yapma
   top_coins_limit: 15              # Radarda taranacak en yüksek hacimli coin adedi
+  min_24h_volume_try: 5000000.0    # Asgari 5 Milyon TL 24s hacim (sığ tahtaları ele)
   budget_per_trade: 200.0          # Her pozisyon için kullanılacak işlem bütçesi (TRY)
   initial_virtual_balance: 500.0   # Başlangıç referans bakiyesi
-  candidate_observation_seconds: 20 # Aday coini almadan önce gözlem süresi (sn)
+  candidate_observation_seconds: 45 # Aday coini almadan önce gözlem süresi (sn)
+  candidate_min_gain_pct: 1.0      # 45s içinde gereken asgari yükseliş ivmesi (%)
+  candidate_min_burst_count: 2     # 45s içinde gereken en az patlama/yükseliş dalgası sayısı
+  candidate_timeout_cooldown_seconds: 5 # 45s içinde yükselemeyenin bekleme/dinlenme süresi (sn)
   filter_falling_coins: true       # Düşüş trendindeki coinleri ele
   only_uptrend: true               # Yalnızca pozitif / yükseliş trendindekileri al
   min_24h_gain_pct: 0.0            # Asgari 24 saatlik getiri eşiği (%)
   fee_rate_pct: 0.1                # Komisyon oranı (%)
+  prevent_rebuy_churn: true        # Aynı coine gereksiz al-sat komisyonunu önle
 
 strategy:
-  active: "adaptive_regime"        # "adaptive_regime" (önerilen) | "rsi_bollinger" | "momentum_ema" | "grid_scalper"
-  take_profit_pct: 2.0             # Kâr Al (%)
-  stop_loss_pct: 1.5               # Zarar Kes (%)
-  trailing_activation_pct: 1.0     # İz süren stop aktivasyon kârı (%)
-  trailing_stop_pct: 1.0           # İz süren stop takip mesafesi (%)
+  active: "fee_recovery"           # "fee_recovery" (Önerilen) | "adaptive_regime" | "rsi_bollinger" | "momentum_ema"
+  fee_multiplier: 2.0              # Komisyon Kâr/Zarar Çarpanı (2x)
+  take_profit_pct: 1.0             # Kâr Al (+%1.0 Net kâr)
+  stop_loss_pct: 1.0               # Zarar Kes (-%1.0 Gürültüye dayanıklı stop)
+  portfolio_stop_loss_pct: 2.0     # Tüm Portföy Zarar Kes Eşiği (%2.0)
+  trailing_activation_pct: 0.80    # İz süren stop aktivasyon kârı (%0.80)
+  trailing_stop_pct: 0.50          # İz süren stop takip mesafesi (%0.50)
   cooldown_seconds: 10             # Genel işlem bekleme süresi (sn)
-  symbol_cooldown_seconds: 60      # Aynı coine tekrar girmek için bekleme süresi (sn)
+  symbol_cooldown_seconds: 90      # Aynı coine tekrar girmek için bekleme süresi (sn)
+  loss_cooldown_seconds: 300       # Zarar kesilen coine 5 dakika ceza süresi
   rsi_period: 14
-  rsi_oversold: 35.0
+  rsi_oversold: 42.0
   rsi_overbought: 65.0
   bollinger_period: 20
   bollinger_std_dev: 2.0

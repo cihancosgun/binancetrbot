@@ -4,18 +4,22 @@ from typing import Dict, Any, Optional, Tuple
 class RiskManager:
     """
     Pozisyon risk yönetimi: Kâr Al (TP), Zarar Kes (SL), İz Süren Stop (Trailing Stop),
-    Başa-baş (Breakeven) koruması ve sembol bazlı işlem sıklığı (Cooldown) kontrollerini yürütür.
+    Başa-baş (Breakeven) koruması, sembol bazlı işlem sıklığı (Cooldown) ve
+    komisyonsuz pozisyon devri (Rollover) kontrollerini yürütür.
     """
     def __init__(
         self,
-        take_profit_pct: float = 1.8,
+        take_profit_pct: float = 2.0,
         stop_loss_pct: float = 1.0,
-        trailing_stop_pct: float = 0.6,
-        trailing_activation_pct: float = 0.8,
+        trailing_stop_pct: float = 0.50,
+        trailing_activation_pct: float = 0.80,
         cooldown_seconds: int = 10,
-        symbol_cooldown_seconds: int = 60,
+        symbol_cooldown_seconds: int = 90,
         max_open_positions: int = 5,
-        fee_rate_pct: float = 0.1,
+        fee_rate_pct: float = 0.10,
+        portfolio_stop_loss_pct: float = 2.0,
+        prevent_rebuy_churn: bool = True,
+        loss_cooldown_seconds: int = 300,
     ):
         self.take_profit_pct = take_profit_pct
         self.stop_loss_pct = stop_loss_pct
@@ -23,10 +27,72 @@ class RiskManager:
         self.trailing_activation_pct = trailing_activation_pct
         self.cooldown_seconds = cooldown_seconds
         self.symbol_cooldown_seconds = symbol_cooldown_seconds
+        self.loss_cooldown_seconds = loss_cooldown_seconds
         self.max_open_positions = max_open_positions
         self.fee_rate_pct = fee_rate_pct
+        self.portfolio_stop_loss_pct = portfolio_stop_loss_pct
+        self.prevent_rebuy_churn = prevent_rebuy_churn
         self.last_trade_time: float = 0.0
         self.symbol_exit_times: Dict[str, float] = {}
+        self.symbol_loss_exit_times: Dict[str, float] = {}
+
+    def apply_fee_recovery_mode(
+        self,
+        fee_rate_pct: Optional[float] = None,
+        fee_multiplier: float = 2.0,
+        take_profit_pct: Optional[float] = None,
+        stop_loss_pct: Optional[float] = None,
+    ) -> None:
+        """
+        Komisyon oranını kurtaran strateji moduna göre risk parametrelerini dinamik günceller:
+        - TP: %1.0 (veya yapılandırılan take_profit_pct)
+        - SL: %1.0 (veya yapılandırılan stop_loss_pct)
+        - Trailing Aktivasyon: %0.80, Trailing Stop: %0.50
+        - Portföy SL: %2.0
+        """
+        if fee_rate_pct is not None:
+            self.fee_rate_pct = fee_rate_pct
+        self.take_profit_pct = take_profit_pct if take_profit_pct is not None else 1.0
+        self.stop_loss_pct = stop_loss_pct if stop_loss_pct is not None else 1.0
+        self.trailing_activation_pct = 0.80
+        self.trailing_stop_pct = 0.50
+
+    def should_rollover_position(
+        self,
+        position: Dict[str, Any],
+        current_price: float,
+        is_profitable_exit: bool,
+        strategy_signal: str,
+        is_top_leader: bool
+    ) -> Tuple[bool, str]:
+        """
+        Kâr Al (TP) veya kârlı Trailing Stop gerçekleştiğinde:
+        Eğer coin hâlâ radarın liderleri arasındaysa veya strateji BUY sinyali üretmeye devam ediyorsa,
+        pozisyonu gereksiz yere kapatıp komisyon (churn) ödemek yerine, pozisyonu açık tutarak (devrederek)
+        giriş referans fiyatını günceller (ratchet) ve komisyonsuz trend takibi sağlar.
+        Zarar Kes (Stop-Loss) durumlarında ASLA devir yapılmaz!
+        """
+        if not self.prevent_rebuy_churn:
+            return False, "Devir koruması devre dışı"
+
+        if not is_profitable_exit:
+            return False, "Zarar kes durumunda devir yapılamaz (Derhal çıkış)"
+
+        if strategy_signal == "BUY" or is_top_leader:
+            return True, "Pozisyon devredildi (Trend devam ediyor, komisyon önlendi)"
+
+        return False, "Devir koşulu sağlanmadı"
+
+    def evaluate_portfolio_stop_loss(self, total_pnl_pct: float) -> Tuple[bool, str]:
+        """
+        Tüm portföy düzeyinde kâr/zarar oranını kontrol eder.
+        Eğer portföy zararı %2.0 (portfolio_stop_loss_pct) eşiğine veya altına inerse
+        tüm pozisyonların derhal kapatılmasını tetikler.
+        """
+        if total_pnl_pct <= -self.portfolio_stop_loss_pct:
+            return True, f"PORTFÖY STOP-LOSS TETİKLENDİ: Toplam portföy %{total_pnl_pct:.2f} zararda (Eşik: -%{self.portfolio_stop_loss_pct:.2f})"
+        return False, "Portföy seviyesi güvenli"
+
 
     def can_open_position(
         self,
@@ -44,7 +110,14 @@ class RiskManager:
 
         now = time.time()
 
-        # Sembol bazlı cooldown (aynı coine peş peşe girmeme)
+        # Zarar kes sonrası ceza beklemesi (Düşen bıçağı tekrar tekrar tutmama)
+        if symbol and symbol in self.symbol_loss_exit_times:
+            elapsed_loss = now - self.symbol_loss_exit_times[symbol]
+            if elapsed_loss < self.loss_cooldown_seconds:
+                remaining = int(self.loss_cooldown_seconds - elapsed_loss)
+                return False, f"{symbol} için zarar kes sonrası ceza beklemesi aktif ({remaining}s kaldı)"
+
+        # Sembol bazlı standart cooldown (aynı coine peş peşe girmeme)
         if symbol and symbol in self.symbol_exit_times:
             elapsed_sym = now - self.symbol_exit_times[symbol]
             if elapsed_sym < self.symbol_cooldown_seconds:
@@ -62,10 +135,13 @@ class RiskManager:
     def record_trade_entry(self, symbol: Optional[str] = None) -> None:
         self.last_trade_time = time.time()
 
-    def record_trade_exit(self, symbol: str) -> None:
+    def record_trade_exit(self, symbol: str, is_loss: bool = False) -> None:
         """Bir pozisyon kapandığında o coinin zaman damgasını kaydeder."""
         if symbol:
-            self.symbol_exit_times[symbol] = time.time()
+            now = time.time()
+            self.symbol_exit_times[symbol] = now
+            if is_loss:
+                self.symbol_loss_exit_times[symbol] = now
 
     def evaluate_exit(self, position: Dict[str, Any], current_price: float) -> Tuple[bool, str, float]:
         """

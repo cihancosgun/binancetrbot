@@ -1,7 +1,10 @@
 let isRunning = false;
 let pollingInterval = null;
+let isFetchingState = false;
 
 async function fetchState() {
+  if (isFetchingState) return;
+  isFetchingState = true;
   try {
     const res = await fetch("/api/state");
     if (!res.ok) return;
@@ -9,6 +12,8 @@ async function fetchState() {
     updateUI(data);
   } catch (err) {
     console.error("State alma hatası:", err);
+  } finally {
+    isFetchingState = false;
   }
 }
 
@@ -106,11 +111,14 @@ function updateUI(data) {
       const sign = c.change_pct > 0 ? "+" : "";
       const obs = c.observation || {};
       let obsHtml = "";
-      if (obs.elapsed !== undefined && obs.elapsed > 0) {
+      if (obs.status === "cooling_down") {
+        obsHtml = `<span class="badge" style="background: rgba(156,163,175,0.15); color: #9ca3af; font-size: 10px; border: 1px solid rgba(156,163,175,0.3);">⏳ Dinlenme (${obs.cooldown_remaining || 0}s)</span>`;
+      } else if (obs.elapsed !== undefined && obs.elapsed > 0) {
+        const burstStr = obs.min_burst_count > 1 ? ` (💥${obs.burst_count || 0}/${obs.min_burst_count})` : "";
         if (obs.is_ready) {
-          obsHtml = `<span class="badge" style="background: rgba(16,185,129,0.18); color: var(--success); font-size: 10px; border: 1px solid rgba(16,185,129,0.3);">✅ Mantıklı (${obs.elapsed}s)</span>`;
+          obsHtml = `<span class="badge" style="background: rgba(16,185,129,0.18); color: var(--success); font-size: 10px; border: 1px solid rgba(16,185,129,0.3);">🚀 Çifte Patlama (%+${obs.change_pct})</span>`;
         } else {
-          obsHtml = `<span class="badge" style="background: rgba(59,130,246,0.18); color: #60a5fa; font-size: 10px; border: 1px solid rgba(59,130,246,0.3);">👁️ ${obs.elapsed}/${obs.min_sec || 30}s</span>`;
+          obsHtml = `<span class="badge" style="background: rgba(59,130,246,0.18); color: #60a5fa; font-size: 10px; border: 1px solid rgba(59,130,246,0.3);">👁️ ${obs.elapsed}/${obs.min_sec || 45}s${burstStr}</span>`;
         }
       }
       return `
@@ -130,7 +138,7 @@ function updateUI(data) {
   }
 
   const obsInput = document.getElementById("input-obs-seconds");
-  if (obsInput && data.config && data.config.candidate_observation_seconds && document.activeElement !== obsInput) {
+  if (obsInput && data.config && data.config.candidate_observation_seconds !== undefined && document.activeElement !== obsInput) {
     obsInput.value = data.config.candidate_observation_seconds;
   }
 
@@ -478,7 +486,7 @@ async function saveConfigParams() {
     symbol: symVal,
     auto_select_coin: isAuto,
     target_coins_count: targetCoinsInput ? parseInt(targetCoinsInput.value) : 5,
-    candidate_observation_seconds: obsInput ? parseInt(obsInput.value) : 45,
+    candidate_observation_seconds: obsInput && obsInput.value !== "" ? parseInt(obsInput.value) : 45,
     only_uptrend: onlyUptrendCheck ? onlyUptrendCheck.checked : true,
   };
 

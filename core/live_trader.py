@@ -23,6 +23,7 @@ class LiveTraderEngine:
         os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
         self.positions: Dict[str, Dict[str, Any]] = {}
         self.closed_trades: List[Dict[str, Any]] = []
+        self.session_initial_balance: Optional[float] = None
         self._symbol_info_cache: Dict[str, Dict[str, Any]] = {}
         self._cached_balances: Dict[str, float] = {}
         self._last_balance_time: float = 0.0
@@ -69,6 +70,7 @@ class LiveTraderEngine:
                 logger.warning(f"İşlem geçmişi arşivlenirken hata: {e}")
 
         self.closed_trades = []
+        self.session_initial_balance = None
         self._save_to_disk()
         logger.info("🧹 Yeni canlı oturum için tamamlanan işlemler sıfırlandı.")
 
@@ -78,6 +80,8 @@ class LiveTraderEngine:
         Bot yeniden başlatıldığında açık olan veya daha önce alınmış canlı pozisyonları
         otomatik olarak tespit edip 'positions' listesine dahil eder.
         """
+        if not getattr(self.client, "api_key", None) or not getattr(self.client, "secret_key", None):
+            return
         try:
             res = self.client.get_account_spot()
             if res.get("code") != 0 or "data" not in res:
@@ -397,22 +401,27 @@ class LiveTraderEngine:
             })
 
         total_equity = try_cash + invested_value
+        if self.session_initial_balance is None and total_equity > 0:
+            self.session_initial_balance = total_equity
+
+        initial_balance = self.session_initial_balance or total_equity
         realized_pnl = sum(t.get("net_pnl", 0.0) for t in self.closed_trades)
-        total_pnl = realized_pnl + sum(p["unrealized_pnl"] for p in open_pos_list)
+        total_pnl = (total_equity - initial_balance) if initial_balance > 0 else 0.0
+        total_pnl_pct = (total_pnl / initial_balance * 100.0) if initial_balance > 0 else 0.0
 
         win_count = sum(1 for t in self.closed_trades if t.get("is_win", False))
         total_trades = len(self.closed_trades)
         win_rate = (win_count / total_trades * 100.0) if total_trades > 0 else 0.0
 
         return {
-            "initial_balance": round(total_equity, 2),
+            "initial_balance": round(initial_balance, 2),
             "cash": round(try_cash, 2),
             "invested_value": round(invested_value, 2),
             "total_equity": round(total_equity, 2),
             "open_positions": open_pos_list,
             "closed_trades": self.closed_trades,
             "total_pnl": round(total_pnl, 2),
-            "total_pnl_pct": round((total_pnl / total_equity * 100.0), 2) if total_equity > 0 else 0.0,
+            "total_pnl_pct": round(total_pnl_pct, 2),
             "realized_pnl": round(realized_pnl, 2),
             "win_rate": round(win_rate, 1),
             "total_trades": total_trades,
