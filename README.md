@@ -154,3 +154,17 @@ binancetr-bot/
 ├── data/                     # Yerel pozisyon verileri (.gitignore ile korunur)
 └── tests/                    # Birim ve entegrasyon testleri
 ```
+
+---
+
+## ⚠️ Sorumluluk Reddi Beyanı (Disclaimer)
+
+> [!WARNING]
+> **Yatırım Tavsiyesi Değildir:**  
+> Bu yazılım yalnızca **eğitim, araştırma ve deneysel algoritmik ticaret testleri** amacıyla geliştirilmiştir. Projede yer alan hiçbir kod, strateji, gösterge veya varsayılan parametre yatırım danışmanlığı veya finansal tavsiye niteliği taşımaz.
+
+- **Kripto Varlık Riski:** Kripto para piyasaları son derece yüksek volatiliteye sahiptir ve ani fiyat dalgalanmaları nedeniyle ciddi sermaye kaybı riski barındırır.
+- **Kullanıcı Sorumluluğu:** Botun canlı modda (`--mode live`) çalıştırılması, gerçek API anahtarlarının kullanılması, emir iletimi, bütçe yönetimi ve gerçekleşen tüm al-sat işlemlerinden doğabilecek kâr veya zararlar tamamen kullanıcının kendi sorumluluğundadır.
+- **Teknik ve Ağ Riskleri:** Borsa API kesintileri, emir iletim gecikmeleri, internet bağlantı kopmaları, slipaj (kayma) veya yazılımsal/donanımsal aksaklıklardan ötürü oluşabilecek hiçbir doğrudan veya dolaylı kayıptan geliştiriciler sorumlu tutulamaz.
+- **Tavsiye:** Gerçek sermaye ile işlem yapmadan önce botu sanal bütçeli **Test/Simülasyon Modunda (`--mode test`)** kapsamlı şekilde denemeniz ve risk yönetimi prensiplerini uygulamanız önemle tavsiye edilir.
+
