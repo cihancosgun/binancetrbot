@@ -15,12 +15,15 @@ class RiskManager:
     """
     def __init__(
         self,
-        take_profit_pct: float = 2.0,
+        take_profit_pct: float = 1.60,
+        partial_tp_pct: float = 0.85,
+        partial_tp_ratio: float = 0.50,
+        enable_partial_tp: bool = False,
         stop_loss_pct: float = 1.0,
-        trailing_stop_pct: float = 0.50,
-        trailing_activation_pct: float = 1.0,
-        breakeven_trigger_pct: float = 0.90,
-        max_holding_seconds: int = 900,
+        trailing_stop_pct: float = 0.35,
+        trailing_activation_pct: float = 0.75,
+        breakeven_trigger_pct: float = 0.45,
+        max_holding_seconds: int = 300,
         cooldown_seconds: int = 5,
         symbol_cooldown_seconds: int = 30,
         loss_cooldown_seconds: int = 180,
@@ -30,6 +33,9 @@ class RiskManager:
         prevent_rebuy_churn: bool = False,
     ):
         self.take_profit_pct = take_profit_pct
+        self.partial_tp_pct = partial_tp_pct
+        self.partial_tp_ratio = partial_tp_ratio
+        self.enable_partial_tp = enable_partial_tp
         self.stop_loss_pct = stop_loss_pct
         self.trailing_stop_pct = trailing_stop_pct
         self.trailing_activation_pct = trailing_activation_pct
@@ -164,7 +170,16 @@ class RiskManager:
             if pnl_pct <= -eff_sl + 1e-5:
                 return True, f"🛑 STOP-LOSS tetiklendi ({pnl_pct:.2f}% <= -{eff_sl:.2f}%)", pnl_pct
 
-        # 2. Akıllı Dinamik Trailing Stop
+        # 2. Tam Kâr Al (Full Take-Profit)
+        if pnl_pct >= eff_tp - 1e-5:
+            return True, f"🎯 TAKE-PROFIT tetiklendi (+{pnl_pct:.2f}% >= +{eff_tp:.2f}%)", pnl_pct
+
+        # 3. Kademeli Kâr Al (Partial Take-Profit / TP1)
+        if self.enable_partial_tp and not position.get("partial_tp_taken", False):
+            if pnl_pct >= self.partial_tp_pct:
+                return True, f"🎯 KADEMELİ KÂR AL (TP1: +{pnl_pct:.2f}% >= +{self.partial_tp_pct:.2f}% | %{int(self.partial_tp_ratio*100)} Realize Edildi)", pnl_pct
+
+        # 4. Akıllı Dinamik Trailing Stop (Kalan Pozisyonu Zirveye Sürme)
         if peak_gain_pct >= eff_trailing_act:
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
             if drop_from_peak_pct >= eff_trailing_stop:
@@ -173,14 +188,16 @@ class RiskManager:
                 else:
                     return True, f"🛡️ BREAKEVEN / İZ SÜREN STOP tetiklendi (+%{pnl_pct:.2f})", pnl_pct
 
-        # 3. Kâr Al (Take-Profit)
-        if pnl_pct >= eff_tp - 1e-5:
-            return True, f"🎯 TAKE-PROFIT tetiklendi (+{pnl_pct:.2f}% >= +{eff_tp:.2f}%)", pnl_pct
 
-        # 4. Hareketsizlik / Zaman Aşımı Çıkışı (Stagnation Exit)
+        # 5. Erken Momentum İptali (Early Invalidation Cut - Sahte Kırılım Koruması)
         entry_time = position.get("entry_time", 0.0)
-        if entry_time > 0 and (time.time() - entry_time >= self.max_holding_seconds):
+        holding_sec = time.time() - entry_time if entry_time > 0 else 0
+        if holding_sec >= 25.0 and peak_gain_pct < 0.20 and pnl_pct <= -0.55:
+            return True, f"🛑 ERKEN MOMENTUM KESİMİ: Sahte kırılım sınırlandı ({pnl_pct:.2f}% <= -0.55%), tam stop-loss'tan kaçınıldı", pnl_pct
+
+        # 6. Hareketsizlik / Durgunluk Tahliyesi (Stagnation Exit)
+        if entry_time > 0 and (holding_sec >= self.max_holding_seconds):
             if -0.40 <= pnl_pct <= 0.40:
-                return True, f"⏱️ ZAMAN AŞIMI (15 dk hareketsizlik): Sermaye taze fırsata aktarılıyor (K/Z: %{pnl_pct:+.2f})", pnl_pct
+                return True, f"⏱️ DURGUNLUK TAHLİYESİ ({int(holding_sec/60)} dk hareketsizlik): Sermaye aktif liderlere aktarılıyor (K/Z: %{pnl_pct:+.2f})", pnl_pct
 
         return False, "Pozisyon devam ediyor", pnl_pct

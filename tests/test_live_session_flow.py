@@ -50,6 +50,17 @@ def test_live_session_flow():
     assert os.path.exists(bot.last_report["html"])
     assert os.path.exists(bot.last_report["json"])
 
+    import json
+    with open(bot.last_report["json"], "r", encoding="utf-8") as f:
+        report_data = json.load(f)
+    assert "logs" in report_data
+    assert len(report_data["logs"]) > 0
+
+    with open(bot.last_report["html"], "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "Oturum & Algoritma Karar Logları" in html_text
+    assert "logs-card" in html_text
+
     print("[OK] Canlı test akışı, anında alım, takip ve raporlama testi başarıyla tamamlandı!")
 
 if __name__ == "__main__":

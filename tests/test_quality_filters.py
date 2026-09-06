@@ -30,10 +30,12 @@ def test_strict_buy_signal_requirement():
     cfg.trading.mode = "simulation"
     cfg.trading.auto_fill_portfolio = False
     cfg.trading.require_strict_buy_signal = True
+    cfg.trading.candidate_observation_seconds = 0
+    cfg.trading.min_observation_gain_pct = 0.0
 
     bot = BinanceTrBot(cfg)
-    bot.scanner.scan_top_active_pairs = lambda **kwargs: [{"symbol": "SOL_TRY", "change_pct": 5.0}]
-    bot.scanner.cached_top_pairs = [{"symbol": "SOL_TRY", "change_pct": 5.0}]
+    bot.scanner.scan_top_active_pairs = lambda **kwargs: [{"symbol": "SOL_TRY", "change_pct": 5.0, "velocity_1m_pct": 0.0, "quant_score": 8.0}]
+    bot.scanner.cached_top_pairs = [{"symbol": "SOL_TRY", "change_pct": 5.0, "velocity_1m_pct": 0.0, "quant_score": 8.0}]
     bot.scanner.watchlist.min_observation_seconds = 0  # Direkt onay
 
     # Mock engine ile HOLD sinyali üret
@@ -57,6 +59,8 @@ def test_strict_buy_signal_requirement():
     assert len(bot.simulator.positions) == 0
 
     # Şimdi BUY sinyali mockla
+    bot.scanner.scan_top_active_pairs = lambda **kwargs: [{"symbol": "SOL_TRY", "change_pct": 5.0, "velocity_1m_pct": 0.5, "quant_score": 8.0}]
+    bot.scanner.cached_top_pairs = [{"symbol": "SOL_TRY", "change_pct": 5.0, "velocity_1m_pct": 0.5, "quant_score": 8.0}]
     mock_buy_snap = {
         "symbol": "SOL_TRY",
         "price": 100.0,
@@ -68,6 +72,7 @@ def test_strict_buy_signal_requirement():
         "ema_slow": 100.0,
         "change_24h_pct": 2.0,
     }
+
     engine.latest_snapshot = mock_buy_snap
     engine.update_market_state = lambda: mock_buy_snap
 

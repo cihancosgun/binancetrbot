@@ -77,35 +77,41 @@ class SimulatorEngine:
         self._record_equity(price)
         return position
 
-    def sell(self, position_id: str, price: float, reason: str = "") -> Optional[Dict[str, Any]]:
+    def sell(self, position_id: str, price: float, fraction: float = 1.0, reason: str = "") -> Optional[Dict[str, Any]]:
         """
         Açık bir sanal pozisyonu satma emri simülasyonu.
+        fraction: 1.0 ise tamamı satılır, < 1.0 ise kademeli kısmi satış (Partial TP) yapılır.
         """
         position = self.positions.get(position_id)
         if not position or price <= 0:
             return None
 
-        quantity = position["quantity"]
-        gross_return = quantity * price
+        fraction = max(0.01, min(1.0, fraction))
+        total_quantity = position["quantity"]
+        sold_quantity = total_quantity * fraction
+        sold_cost = position["invested_cost"] * fraction
+        sold_entry_fee = position.get("entry_fee", 0.0) * fraction
+
+        gross_return = sold_quantity * price
         exit_fee = gross_return * self.fee_rate
         net_return = gross_return - exit_fee
 
-        invested_cost = position["invested_cost"]
-        total_fees = position["entry_fee"] + exit_fee
-        net_pnl = net_return - invested_cost
-        pnl_pct = ((net_return - invested_cost) / invested_cost) * 100.0
+        total_fees = sold_entry_fee + exit_fee
+        net_pnl = net_return - sold_cost
+        pnl_pct = ((net_return - sold_cost) / sold_cost) * 100.0 if sold_cost > 0 else 0.0
 
+        is_full_close = fraction >= 0.999
         order = {
             "order_id": str(uuid.uuid4())[:8],
             "position_id": position_id,
             "symbol": position["symbol"],
-            "side": "SELL",
+            "side": "SELL" if is_full_close else "PARTIAL_SELL",
             "entry_price": position["entry_price"],
             "exit_price": price,
-            "quantity": quantity,
+            "quantity": sold_quantity,
             "gross_return": gross_return,
             "net_return": net_return,
-            "invested_cost": invested_cost,
+            "invested_cost": sold_cost,
             "total_fees": total_fees,
             "net_pnl": net_pnl,
             "pnl_pct": pnl_pct,
@@ -113,12 +119,22 @@ class SimulatorEngine:
             "timestamp": time.time(),
             "reason": reason,
             "is_win": net_pnl > 0,
+            "is_partial": not is_full_close,
         }
         self.all_orders.append(order)
         self.closed_trades.append(order)
 
         self.cash += net_return
-        del self.positions[position_id]
+
+        if is_full_close:
+            del self.positions[position_id]
+        else:
+            position["quantity"] -= sold_quantity
+            position["invested_cost"] -= sold_cost
+            position["entry_fee"] -= sold_entry_fee
+            position["partial_tp_taken"] = True
+            # Kısmi satış sonrası maliyeti koru
+            position["breakeven_locked"] = True
 
         self._record_equity(price)
         return order

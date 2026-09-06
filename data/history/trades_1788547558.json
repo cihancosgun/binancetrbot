@@ -1,0 +1,17 @@
+[
+  {
+    "order_id": "1329487900",
+    "symbol": "MARSCOIN_TRY",
+    "side": "SELL",
+    "entry_price": 10.02,
+    "exit_price": 9.92,
+    "quantity": 19.8,
+    "invested_cost": 200.0,
+    "net_pnl": -3.58,
+    "pnl_pct": -1.0,
+    "timestamp": 1788547515.4258094,
+    "reason": "🛑 ERKEN MOMENTUM KESİMİ: Sahte kırılım sınırlandı (-1.00% <= -0.65%), tam stop-loss'tan kaçınıldı",
+    "is_win": false,
+    "is_partial": false
+  }
+]

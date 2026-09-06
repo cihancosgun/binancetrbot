@@ -13,17 +13,25 @@ class TradingConfig:
     auto_fill_portfolio: bool = False # Sadece strateji BUY sinyali verdiğinde al (acele doldurma)
     require_strict_buy_signal: bool = True # Strateji teyidi olmadan işlem açmama
     top_coins_limit: int = 0         # Taranacak coin havuzu (0 = Tüm Binance TR TRY çiftlerini tara ve rotasyon yap)
-    min_24h_volume_try: float = 5000000.0 # En az 5 Milyon TL 24s hacim (sığ meme coinleri ele)
+    min_24h_volume_try: float = 8000000.0 # En az 8 Milyon TL 24s hacim (sığ meme coinleri ele)
+    min_coin_price: float = 0.05          # 0.05 TL altındaki kuruş altı coinleri yüksek spread nedeniyle filtrele
     initial_virtual_balance: float = 10000.0
     budget_per_trade: float = 2000.0         # Her bir coine ayrılacak bütçe (TL)
-    candidate_observation_seconds: int = 15 # Aday coini almadan önce 15 saniye gözlemleme süresi (sn)
-    min_observation_gain_pct: float = 0.50   # Aday coin için gözlem penceresinde gereken min yükseliş ivmesi (%0.50)
+    candidate_observation_seconds: int = 12 # Aday coini almadan önce 12 saniye gözlemleme süresi (sn)
+    candidate_prebuy_seconds: int = 10       # Coini almadan önce 10 saniye mikro düşüş izlemesi (sn)
+    min_observation_gain_pct: float = 0.20   # Aday coin için gözlem penceresinde gereken min yükseliş ivmesi (%0.20)
+
     candidate_min_burst_count: int = 1       # Onay için gereken ivme sayısı
     candidate_timeout_cooldown_seconds: int = 10 # İvme yakalayamayan coinin dinlenme süresi (sn)
     filter_falling_coins: bool = True        # Sürekli tepe aşağı düşen coinleri engelleme
     only_uptrend: bool = True                # Radarda sadece pozitif/yükseliş trendindeki coinleri tara
-    min_24h_gain_pct: float = 0.0            # En az 24 saatlik getiri eşiği (%0.0)
+    min_24h_gain_pct: float = 0.50           # En az 24 saatlik getiri eşiği (%0.50)
+
+
     fee_rate_pct: float = 0.1
+    max_allowed_spread_pct: float = 0.20     # En fazla %0.20 alış-satış makası (Spread Guard)
+    btc_dump_shield_pct: float = 0.35        # BTC 1 dakikada %0.35 düşerse alımları dondur (Market Beta Shield)
+    btc_dump_cooldown_seconds: int = 120     # BTC dump sonrası dondurma süresi (120 sn)
     prevent_rebuy_churn: bool = False        # Doğrudan kâr satışı ve kâr realize etme
     loss_cooldown_seconds: int = 180         # Zarar kesilen coine 3 dk (180s) ceza beklemesi
 
@@ -35,12 +43,17 @@ class TestConfig:
 @dataclass
 class StrategyConfig:
     active: str = "adaptive_regime"          # Piyasa Rejimi ve Quant Momentum Stratejisi
-    take_profit_pct: float = 2.0             # Kâr Al (+%2.00)
-    stop_loss_pct: float = 1.0               # Zarar Kes (-%1.00)
-    trailing_stop_pct: float = 0.50          # İz Süren Stop Mesafesi (%0.50)
-    trailing_activation_pct: float = 1.0     # Trailing Stop Devreye Girme Eşiği (+%1.00)
-    breakeven_trigger_pct: float = 0.90      # Breakeven Kilit Eşiği (+%0.90 kârda stop maliyete çekilir)
+    take_profit_pct: float = 1.20            # Tam Kâr Al (+%1.20)
+    partial_tp_pct: float = 0.60             # 1. Kademe Kâr Al Eşiği (+%0.60 TP1)
+    partial_tp_ratio: float = 0.50           # 1. Kademede satılacak pozisyon oranı (%50)
+    enable_partial_tp: bool = True           # Kademeli kâr almayı aktif et
+    stop_loss_pct: float = 0.85              # Zarar Kes (-%0.85)
+    trailing_stop_pct: float = 0.20          # İz Süren Stop Mesafesi (%0.20)
+    trailing_activation_pct: float = 0.50    # Trailing Stop Devreye Girme Eşiği (+%0.50)
+    breakeven_trigger_pct: float = 0.35      # Breakeven Kilit Eşiği (+%0.35 kârda stop maliyet+komisyona çekilir)
     portfolio_stop_loss_pct: float = 2.5     # Tüm Portföy Zarar Kes Eşiği (%2.50)
+    max_holding_seconds: int = 300           # Durgunluk Tahliyesi (5 dk hareketsiz kalan pozisyonu kapat)
+
     fee_multiplier: float = 2.0              # Komisyon Çarpanı
     cooldown_seconds: int = 5                # Alımlar arası bekleme süresi (5 sn)
     symbol_cooldown_seconds: int = 30        # Aynı coine tekrar girmek için bekleme süresi (30 sn)

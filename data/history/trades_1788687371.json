@@ -1,0 +1,17 @@
+[
+  {
+    "order_id": "1330604361",
+    "symbol": "NOM_TRY",
+    "side": "SELL",
+    "entry_price": 0.088,
+    "exit_price": 0.087,
+    "quantity": 4538.0,
+    "invested_cost": 400.0,
+    "net_pnl": -5.19,
+    "pnl_pct": -1.14,
+    "timestamp": 1788687187.9049547,
+    "reason": "🛑 STOP-LOSS tetiklendi (-1.14% <= -1.00%)",
+    "is_win": false,
+    "is_partial": false
+  }
+]

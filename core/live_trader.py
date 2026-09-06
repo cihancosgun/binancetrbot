@@ -250,10 +250,10 @@ class LiveTraderEngine:
             logger.error(f"Binance TR Alış Emri Başarısız [{symbol}]: {res}")
         return None
 
-    def sell(self, position_id: str, price: float, reason: str = "") -> Optional[Dict[str, Any]]:
+    def sell(self, position_id: str, price: float, fraction: float = 1.0, reason: str = "") -> Optional[Dict[str, Any]]:
         """
         Gerçek Binance TR satış emri gönderir.
-        Komisyon kesintisinden dolayı cüzdandaki serbest miktarı kontrol eder ve tam miktarı satar.
+        fraction: 1.0 ise tamamı satılır, < 1.0 ise kademeli kısmi satış (Partial TP) yapılır.
         """
         pos = self.positions.get(position_id)
         if not pos or price <= 0:
@@ -262,17 +262,21 @@ class LiveTraderEngine:
         sym = pos.get("symbol", self.symbol)
         base_asset = sym.replace("_TRY", "").replace("TRY", "")
 
+        fraction = max(0.01, min(1.0, fraction))
+        is_full_close = fraction >= 0.999
+
         # Cüzdandaki reel serbest bakiyeyi kontrol et (Borsanın komisyon kestiği net miktar)
         real_balances = self.get_real_balances()
         wallet_free = real_balances.get(base_asset, 0.0)
 
         # Cüzdandaki reel miktar ile kayıtlı miktarın uygun olanını al
         available_qty = wallet_free if wallet_free > 0 else pos.get("quantity", 0.0)
-        qty = self.format_quantity(sym, available_qty)
+        target_qty = available_qty * fraction
+        qty = self.format_quantity(sym, target_qty)
 
         if qty <= 0:
             logger.warning(f"Satış için bakiye bulunamadı veya coin zaten satılmış [{sym}]. Cüzdan Serbest: {wallet_free}")
-            if wallet_free <= 0.001:
+            if wallet_free <= 0.001 and is_full_close:
                 del self.positions[position_id]
                 self._save_to_disk()
             return None
@@ -286,13 +290,13 @@ class LiveTraderEngine:
 
         if res.get("code") == 0:
             gross_return = price * qty
-            entry_cost = pos.get("invested_cost", pos["entry_price"] * qty)
+            entry_cost = pos.get("invested_cost", pos["entry_price"] * available_qty) * fraction
             pnl = gross_return - entry_cost
             pnl_pct = ((price - pos["entry_price"]) / pos["entry_price"]) * 100.0 if pos["entry_price"] > 0 else 0.0
             trade_record = {
                 "order_id": position_id,
                 "symbol": sym,
-                "side": "SELL",
+                "side": "SELL" if is_full_close else "PARTIAL_SELL",
                 "entry_price": pos["entry_price"],
                 "exit_price": price,
                 "quantity": qty,
@@ -302,12 +306,19 @@ class LiveTraderEngine:
                 "timestamp": time.time(),
                 "reason": reason,
                 "is_win": pnl > 0,
+                "is_partial": not is_full_close,
             }
             self.closed_trades.append(trade_record)
-            del self.positions[position_id]
+            if is_full_close:
+                del self.positions[position_id]
+            else:
+                pos["quantity"] = max(0.0, available_qty - qty)
+                pos["invested_cost"] = max(0.0, pos.get("invested_cost", 0.0) - entry_cost)
+                pos["partial_tp_taken"] = True
+                pos["breakeven_locked"] = True
             self._save_to_disk()
             self._last_balance_time = 0.0
-            logger.info(f"✅ Satış Başarılı [{sym}]: Miktar={qty} | Fiyat={price:.4f} TL | K/Z={pnl:.2f} TL")
+            logger.info(f"✅ Satış Başarılı [{sym}]: Miktar={qty} (Oran: %{int(fraction*100)}) | Fiyat={price:.4f} TL | K/Z={pnl:.2f} TL")
             return trade_record
         else:
             logger.error(f"Binance TR Satış Emri Başarısız [{sym}]: {res}")

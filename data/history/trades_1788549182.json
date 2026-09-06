@@ -1,0 +1,17 @@
+[
+  {
+    "order_id": "1329489938",
+    "symbol": "CATI_TRY",
+    "side": "SELL",
+    "entry_price": 3.118,
+    "exit_price": 3.119,
+    "quantity": 64.0,
+    "invested_cost": 200.0,
+    "net_pnl": -0.38,
+    "pnl_pct": 0.03,
+    "timestamp": 1788548022.542426,
+    "reason": "⏱️ DURGUNLUK TAHLİYESİ (5 dk hareketsizlik): Sermaye aktif liderlere aktarılıyor (K/Z: %+0.03)",
+    "is_win": false,
+    "is_partial": false
+  }
+]

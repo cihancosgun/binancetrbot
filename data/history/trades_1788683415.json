@@ -1,0 +1,32 @@
+[
+  {
+    "order_id": "1330570140",
+    "symbol": "SOLV_TRY",
+    "side": "SELL",
+    "entry_price": 0.179,
+    "exit_price": 0.178,
+    "quantity": 1115.0,
+    "invested_cost": 200.0,
+    "net_pnl": -1.53,
+    "pnl_pct": -0.56,
+    "timestamp": 1788683348.7249227,
+    "reason": "🛑 ERKEN MOMENTUM KESİMİ: Sahte kırılım sınırlandı (-0.56% <= -0.55%), tam stop-loss'tan kaçınıldı",
+    "is_win": false,
+    "is_partial": false
+  },
+  {
+    "order_id": "1330569920",
+    "symbol": "ARB_TRY",
+    "side": "SELL",
+    "entry_price": 9.55,
+    "exit_price": 9.53,
+    "quantity": 20.8,
+    "invested_cost": 200.0,
+    "net_pnl": -1.78,
+    "pnl_pct": -0.21,
+    "timestamp": 1788683349.3814056,
+    "reason": "🚨 PORTFÖY STOP-LOSS: Portföy %-9.09 zararda (Eşik: -%2.50)",
+    "is_win": false,
+    "is_partial": false
+  }
+]

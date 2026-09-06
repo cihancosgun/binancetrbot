@@ -50,7 +50,8 @@ class BinanceTrBot:
         )
         self.scanner = MarketScanner(
             quote_asset="TRY",
-            min_volume_try=getattr(self.config.trading, "min_24h_volume_try", 5000000.0)
+            min_volume_try=getattr(self.config.trading, "min_24h_volume_try", 5000000.0),
+            min_coin_price=getattr(self.config.trading, "min_coin_price", 0.05)
         )
         obs_sec = getattr(self.config.trading, "candidate_observation_seconds", 15)
         self.scanner.watchlist.min_observation_seconds = obs_sec
@@ -65,10 +66,14 @@ class BinanceTrBot:
         self.market_data = self.get_engine_for(default_sym)
         self.risk_manager = RiskManager(
             take_profit_pct=self.config.strategy.take_profit_pct,
+            partial_tp_pct=getattr(self.config.strategy, "partial_tp_pct", 0.85),
+            partial_tp_ratio=getattr(self.config.strategy, "partial_tp_ratio", 0.50),
+            enable_partial_tp=getattr(self.config.strategy, "enable_partial_tp", True),
             stop_loss_pct=self.config.strategy.stop_loss_pct,
             trailing_stop_pct=self.config.strategy.trailing_stop_pct,
-            trailing_activation_pct=getattr(self.config.strategy, "trailing_activation_pct", 1.0),
-            breakeven_trigger_pct=getattr(self.config.strategy, "breakeven_trigger_pct", 0.90),
+            trailing_activation_pct=getattr(self.config.strategy, "trailing_activation_pct", 0.75),
+            breakeven_trigger_pct=getattr(self.config.strategy, "breakeven_trigger_pct", 0.45),
+            max_holding_seconds=getattr(self.config.strategy, "max_holding_seconds", 300),
             cooldown_seconds=getattr(self.config.strategy, "cooldown_seconds", 5),
             symbol_cooldown_seconds=getattr(self.config.strategy, "symbol_cooldown_seconds", 30),
             loss_cooldown_seconds=getattr(self.config.strategy, "loss_cooldown_seconds", 180),
@@ -90,6 +95,7 @@ class BinanceTrBot:
 
         self.strategy = self._init_strategy()
         self.is_running = False
+        self.stop_completed = False
         self.session_start_time: Optional[float] = None
         self.session_duration_seconds: int = self.config.test.duration_minutes * 60
         self.thread: Optional[threading.Thread] = None
@@ -98,6 +104,14 @@ class BinanceTrBot:
         self.logs: list[str] = []
         self.heartbeat_counter: int = 0
         self.step_count: int = 0
+        self.session_start_time: Optional[float] = None
+        dur_min = getattr(self.config.test, "duration_minutes", 15)
+        self.startup_calibration_seconds: float = 20.0 if dur_min <= 5 else 60.0
+        self.calibration_end_time: float = 0.0
+        self.calibration_completed: bool = False
+        self.current_round: int = 1
+        self.round_start_time: float = 0.0
+        self.round_duration_seconds: int = 60
         is_live = self.config.trading.mode == "live"
         self.current_status_text: str = "Hazır - Canlı İşlem Bekleniyor" if is_live else "Hazır - Test Bekleniyor"
 
@@ -166,22 +180,40 @@ class BinanceTrBot:
             self.simulator.reset_session_trades()
 
         self.is_running = True
+        self.stop_completed = False
         self.session_start_time = time.time()
+        self.calibration_end_time = self.session_start_time + self.startup_calibration_seconds
+        self.calibration_completed = False
+        self.current_round = 1
+        self.round_start_time = self.session_start_time
         self.log(f"🚀 Bot başlatıldı! Mod: {self.config.trading.mode.upper()} | Parite: {self.config.trading.symbol} | Süre: {int(self.session_duration_seconds / 60)} dk")
+        self.log("🔬 [1-DK BAŞLANGIÇ PİYASA KALİBRASYONU] Piyasadaki tüm TRY çiftlerinin ilk 60 saniyelik mikro-fiyat hareketleri taranıyor...")
 
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
 
     def stop(self) -> Dict[str, Any]:
-        if not self.is_running:
+        if not self.is_running and self.stop_completed:
             return {"status": "already_stopped"}
 
         self.is_running = False
-        self.log("🛑 Bot durduruldu. Rapor oluşturuluyor...")
-        report_files = self._generate_final_report()
-        self.last_report = report_files
-        self.log(f"📊 Rapor kaydedildi: {report_files.get('html')}")
-        return {"status": "stopped", "report": report_files}
+        self.log("🛑 Bot durduruldu. Kalan açık test pozisyonları realize ediliyor...")
+        try:
+            if self.config.trading.mode == "simulation" and self.simulator.positions:
+                self.force_close_all(reason="Test Oturumu Tamamlandı (Kapanış Realizasyonu)")
+        except Exception as e:
+            self.log(f"⚠️ Oturum sonu pozisyon kapatma hatası: {e}")
+
+        try:
+            report_files = self._generate_final_report()
+            self.last_report = report_files
+            self.log(f"📊 Rapor kaydedildi: {report_files.get('html')}")
+            self.stop_completed = True
+            return {"status": "stopped", "report": report_files}
+        except Exception as e:
+            self.log(f"⚠️ Rapor oluşturma hatası: {e}")
+            self.stop_completed = True
+            return {"status": "stopped", "error": str(e)}
 
     def _run_loop(self) -> None:
         while self.is_running:
@@ -256,24 +288,32 @@ class BinanceTrBot:
         closed = []
         if self.config.trading.mode == "simulation":
             for pos_id, pos in list(self.simulator.positions.items()):
-                sym = pos["symbol"]
-                engine = self.get_engine_for(sym)
-                snap = engine.update_market_state()
-                price = snap["price"] if snap and snap["price"] > 0 else pos["current_price"]
-                order = self.simulator.sell(pos_id, price, reason=reason)
-                if order:
-                    closed.append(order)
-                    self.log(f"🛑 Pozisyon Kapatıldı [{sym}]: Net K/Z={order['net_pnl']:.2f} TL ({order['pnl_pct']:.2f}%)")
+                try:
+                    sym = pos["symbol"]
+                    engine = self.get_engine_for(sym)
+                    snap = engine.update_market_state() if engine else None
+                    price = snap["price"] if (snap and snap.get("price", 0) > 0) else pos.get("current_price", pos["entry_price"])
+                    if price <= 0:
+                        price = pos.get("entry_price", 1.0)
+                    order = self.simulator.sell(pos_id, price, reason=reason)
+                    if order:
+                        closed.append(order)
+                        self.log(f"🛑 Pozisyon Kapatıldı [{sym}]: Net K/Z={order['net_pnl']:.2f} TL ({order['pnl_pct']:.2f}%)")
+                except Exception as ex:
+                    self.log(f"⚠️ Pozisyon kapatma hatası [{pos.get('symbol')}]: {ex}")
         else:
             for pos_id, pos in list(self.live_trader.positions.items()):
-                sym = pos["symbol"]
-                engine = self.get_engine_for(sym)
-                snap = engine.update_market_state()
-                price = snap["price"] if snap and snap["price"] > 0 else pos["entry_price"]
-                order = self.live_trader.sell(pos_id, price, reason=reason)
-                if order:
-                    closed.append(order)
-                    self.log(f"🛑 Canlı Pozisyon Kapatıldı [{sym}]: Net K/Z={order['net_pnl']:.2f} TL")
+                try:
+                    sym = pos["symbol"]
+                    engine = self.get_engine_for(sym)
+                    snap = engine.update_market_state() if engine else None
+                    price = snap["price"] if (snap and snap.get("price", 0) > 0) else pos.get("entry_price", 1.0)
+                    order = self.live_trader.sell(pos_id, price, reason=reason)
+                    if order:
+                        closed.append(order)
+                        self.log(f"🛑 Canlı Pozisyon Kapatıldı [{sym}]: Net K/Z={order['net_pnl']:.2f} TL")
+                except Exception as ex:
+                    self.log(f"⚠️ Canlı pozisyon kapatma hatası [{pos.get('symbol')}]: {ex}")
         return closed
 
     def close_single_position(self, position_id: str, reason: str = "Manuel Satış") -> Optional[Dict[str, Any]]:
@@ -329,23 +369,28 @@ class BinanceTrBot:
 
                 should_close, reason, pnl_pct = self.risk_manager.evaluate_exit(pos, cur_p)
                 if should_close:
-                    is_profitable = pnl_pct > 0 and ("TAKE-PROFIT" in reason or "TRAILING" in reason or "BREAKEVEN" in reason)
+                    is_profitable = pnl_pct > 0 and ("TAKE-PROFIT" in reason or "TRAILING" in reason or "BREAKEVEN" in reason or "KADEMELİ KÂR AL" in reason)
                     strat_sig, _ = self.strategy.evaluate(snap, len(open_positions)) if snap else ("HOLD", "")
                     is_top = sym in top_leaders
                     rollover_ok, rollover_msg = self.risk_manager.should_rollover_position(
                         pos, cur_p, is_profitable_exit=is_profitable, strategy_signal=strat_sig, is_top_leader=is_top
                     )
-                    if rollover_ok:
+                    if rollover_ok and "KADEMELİ KÂR AL" not in reason:
                         pos["entry_price"] = cur_p
                         pos["highest_price"] = cur_p
                         self.log(f"🔄 POZİSYON DEVRİ [{sym}]: Kâr seviyesine ulaşıldı (+%{pnl_pct:.2f}), trend sürdüğü ve coin lider kaldığı için satılmadan pozisyon devredildi. Yeni taban fiyat: {cur_p:.4f} TL")
                         continue
 
+                    sell_fraction = 1.0
+                    if "KADEMELİ KÂR AL" in reason or "TP1" in reason:
+                        sell_fraction = getattr(self.config.strategy, "partial_tp_ratio", 0.50)
+
                     self.log(f"🎯 POZİSYON KAPANIŞI [{sym}]: {reason}")
-                    trade = self.simulator.sell(pos["position_id"], cur_p, reason=reason)
+                    trade = self.simulator.sell(pos["position_id"], cur_p, fraction=sell_fraction, reason=reason)
                     if trade:
                         is_loss_exit = pnl_pct <= 0 or "STOP-LOSS" in reason
-                        self.risk_manager.record_trade_exit(sym, is_loss=is_loss_exit)
+                        if sell_fraction >= 1.0:
+                            self.risk_manager.record_trade_exit(sym, is_loss=is_loss_exit)
                         self.log(f"✅ Satış Gerçekleşti [{sym}]: Fiyat={cur_p:.4f} TL | Net K/Z={trade['net_pnl']:.2f} TL (%{trade['pnl_pct']:.2f})")
 
             open_count = len(self.simulator.positions)
@@ -370,23 +415,28 @@ class BinanceTrBot:
 
                 should_close, reason, pnl_pct = self.risk_manager.evaluate_exit(pos, cur_p)
                 if should_close:
-                    is_profitable = pnl_pct > 0 and ("TAKE-PROFIT" in reason or "TRAILING" in reason or "BREAKEVEN" in reason)
+                    is_profitable = pnl_pct > 0 and ("TAKE-PROFIT" in reason or "TRAILING" in reason or "BREAKEVEN" in reason or "KADEMELİ KÂR AL" in reason)
                     strat_sig, _ = self.strategy.evaluate(snap, len(open_positions)) if snap else ("HOLD", "")
                     is_top = sym in top_leaders
                     rollover_ok, rollover_msg = self.risk_manager.should_rollover_position(
                         pos, cur_p, is_profitable_exit=is_profitable, strategy_signal=strat_sig, is_top_leader=is_top
                     )
-                    if rollover_ok:
+                    if rollover_ok and "KADEMELİ KÂR AL" not in reason:
                         pos["entry_price"] = cur_p
                         pos["highest_price"] = cur_p
                         self.log(f"🔄 CANLI POZİSYON DEVRİ [{sym}]: Kâr (+%{pnl_pct:.2f}) sonrası pozisyon devredildi. Yeni taban: {cur_p:.4f} TL")
                         continue
 
+                    sell_fraction = 1.0
+                    if "KADEMELİ KÂR AL" in reason or "TP1" in reason:
+                        sell_fraction = getattr(self.config.strategy, "partial_tp_ratio", 0.50)
+
                     self.log(f"🎯 CANLI KAPANIŞ [{sym}]: {reason}")
-                    trade = self.live_trader.sell(pos["position_id"], cur_p, reason=reason)
+                    trade = self.live_trader.sell(pos["position_id"], cur_p, fraction=sell_fraction, reason=reason)
                     if trade:
                         is_loss_exit = pnl_pct <= 0 or "STOP-LOSS" in reason
-                        self.risk_manager.record_trade_exit(sym, is_loss=is_loss_exit)
+                        if sell_fraction >= 1.0:
+                            self.risk_manager.record_trade_exit(sym, is_loss=is_loss_exit)
                         self.log(f"✅ Canlı Satış [{sym}]: Fiyat={cur_p:.4f} TL | Net K/Z={trade['net_pnl']:.2f} TL")
 
             open_count = len(self.live_trader.positions)
@@ -411,6 +461,8 @@ class BinanceTrBot:
             target_count = getattr(self.config.trading, "target_coins_count", 5)
             only_up = getattr(self.config.trading, "only_uptrend", True)
             min_gain = getattr(self.config.trading, "min_24h_gain_pct", 0.0)
+            
+            # Tüm piyasayı anlık tara ve mikro tickleri kaydet
             top_pairs = self.scanner.scan_top_active_pairs(
                 limit=getattr(self.config.trading, "top_coins_limit", 0),
                 only_uptrend=only_up,
@@ -419,133 +471,188 @@ class BinanceTrBot:
             open_symbols = {p["symbol"] for p in open_positions}
             slots_needed = max(0, target_count - open_count)
 
+            now = time.time()
+            if self.round_start_time <= 0:
+                self.round_start_time = now
+
+            round_elapsed = int(now - self.round_start_time)
+            
+            is_calibrating = (
+                self.is_running 
+                and self.session_start_time is not None 
+                and (now < self.calibration_end_time) 
+                and not self.calibration_completed
+                and open_count == 0
+            )
+            calib_elapsed = int(now - self.session_start_time) if self.session_start_time else 0
+            calib_rem = max(0, int(self.calibration_end_time - now))
+
+            # 1. BAŞLANGIÇ 1-DAKİKALIK KALİBRASYON FAZI
+            if is_calibrating:
+                self.current_status_text = f"⏳ 1-Dk Piyasa Kalibrasyonu: {calib_elapsed}/60s (Mikro-momentum haritası çıkarılıyor)"
+                self.heartbeat_counter += 1
+                if self.heartbeat_counter % 3 == 0:
+                    leaders = [f"{p['symbol']} (%{p.get('velocity_1m_pct', 0.0):+.2f} 1m)" for p in top_pairs[:4]]
+                    self.log(f"⏳ [1-DK KALİBRASYON ({calib_elapsed}/60s)] Piyasa mikro-akışı taranıyor... Anlık Liderler: {' | '.join(leaders)}")
+                return
+
+            if not self.calibration_completed and self.session_start_time and open_count == 0:
+                self.calibration_completed = True
+                self.log("🚀 [1-DK KALİBRASYON TAMAMLANDI] 60 saniyelik mikro-momentum analizi sonuçlandı. Gerçek pozitif ivmeye (%+0.10 ve üzeri) sahip lider coinler alınıyor...")
+
             # Durum metnini güncelle
             if open_count > 0:
-                self.current_status_text = f"Dinamik Portföy: {open_count}/{target_count} Coin Aktif (Tüm Pazar Taranıyor)"
+                self.current_status_text = f"Dinamik Portföy: {open_count}/{target_count} Coin Aktif | Tur #{self.current_round} ({round_elapsed}/60s)"
             else:
-                top_names = [f"{p['symbol']} (%{p['change_pct']:+.1f})" for p in top_pairs[:3]]
-                self.current_status_text = f"Portföy Dolduruluyor: Liderler [{', '.join(top_names)}]"
+                top_names = [f"{p['symbol']} (%{p.get('velocity_1m_pct', p['change_pct']):+.1f} 1m)" for p in top_pairs[:3]]
+                self.current_status_text = f"Tur #{self.current_round} ({round_elapsed}/60s): 1m Liderler [{', '.join(top_names)}]"
 
             # Periyodik Log
             self.heartbeat_counter += 1
             if self.heartbeat_counter % 4 == 0:
                 if open_count > 0:
                     pos_summaries = [f"{pos['symbol']}: {pos.get('unrealized_pnl', 0):+.2f}TL (%{pos.get('unrealized_pnl_pct', 0):+.2f})" for pos in open_positions[:5]]
-                    self.log(f"📊 [PORTFÖY DURUMU ({open_count}/{target_count} COİN)] {' | '.join(pos_summaries)}")
+                    self.log(f"📊 [PORTFÖY DURUMU ({open_count}/{target_count} COİN - TUR #{self.current_round})] {' | '.join(pos_summaries)}")
                 else:
-                    obs_summaries = []
-                    for p in top_pairs[:4]:
-                        sym = p["symbol"]
-                        info = self.scanner.watchlist.get_info(sym)
-                        if info.get("status") == "cooling_down":
-                            obs_summaries.append(f"{sym}: ⏳{info.get('cooldown_remaining', 0)}s")
-                        elif info.get("elapsed", 0) > 0:
-                            obs_summaries.append(f"{sym}: %{info.get('change_pct', 0.0):+.2f} ({info.get('elapsed')}/{info.get('min_sec')}s)")
-                        else:
-                            obs_summaries.append(f"{sym}: (%{p['change_pct']:+.1f})")
-                    obs_text = " | ".join(obs_summaries)
-                    min_g = getattr(self.config.trading, 'min_observation_gain_pct', 1.5)
-                    self.log(f"🔍 [RADAR İZLEME ({len(top_pairs)} Coin)] {obs_text} -> Patlama (Hedef: >= %{min_g:.2f}) bekleniyor...")
-
-            slots_needed = target_count - open_count
+                    obs_summaries = [f"{p['symbol']}: %{p.get('velocity_1m_pct', 0.0):+.2f} (1m Hız | Skor: {p.get('quant_score', 0)})" for p in top_pairs[:4]]
+                    self.log(f"🔍 [1-DK QUANT RADARI - TUR #{self.current_round} ({round_elapsed}/60s)] {' | '.join(obs_summaries)}")
 
             if slots_needed > 0:
-                top_pairs = self.scanner.scan_top_active_pairs(
-                    limit=getattr(self.config.trading, "top_coins_limit", 0),
-                    only_uptrend=getattr(self.config.trading, "only_uptrend", True),
-                    min_gain_pct=getattr(self.config.trading, "min_24h_gain_pct", 0.0),
-                )
-                open_symbols = {p["symbol"] for p in open_positions}
+                # Oturum Sonu Koruması: Test süresinin bitimine 60 saniyeden az kaldıysa yeni pozisyon açma
+                if self.session_duration_seconds > 0 and self.session_start_time:
+                    remaining_session_sec = (self.session_start_time + self.session_duration_seconds) - now
+                    if remaining_session_sec < 60.0:
+                        slots_needed = 0
+
+                # BTC Market Beta Shield Kontrolü (BTC ani düşüşte altcoin alımlarını dondurur)
+                if slots_needed > 0 and hasattr(self.scanner, "is_btc_dumping"):
+                    is_btc_dump, btc_msg = self.scanner.is_btc_dumping()
+                    if is_btc_dump:
+                        if self.heartbeat_counter % 3 == 0:
+                            self.log(f"{btc_msg}")
+                        return
+
                 if mode == "simulation":
                     available_cash = self.simulator.cash
                 else:
                     available_cash = self.live_trader.get_real_balances().get("TRY", 0.0)
 
                 per_coin_budget = min(self.config.trading.budget_per_trade, available_cash / max(1, slots_needed))
+                obs_sec = getattr(self.config.trading, "candidate_observation_seconds", 60)
+                if hasattr(self.scanner, "watchlist"):
+                    obs_sec = min(obs_sec, getattr(self.scanner.watchlist, "min_observation_seconds", obs_sec))
+                min_req_gain = getattr(self.config.trading, "min_observation_gain_pct", 0.10) if obs_sec > 0 else 0.0
 
-                # Radarı en yüksek hacimli/skorlu taze adaylara odakla (tüm pazarı tek saniyede spamlamaz)
-                candidate_pairs = [p for p in top_pairs if p["symbol"] not in open_symbols][:max(8, slots_needed * 2)]
+                require_strict = getattr(self.config.trading, "require_strict_buy_signal", True)
+                # Radarı pozitif 1m ivmesi olan, en az 5 farklı coini doldurabilecek taze liderlere odakla
+                candidate_pairs = [
+                    p for p in top_pairs 
+                    if p["symbol"] not in open_symbols 
+                    and not p.get("is_dumping", False)
+                    and not self.scanner.tracker.is_cooling_down(p["symbol"])
+                    and (p.get("velocity_1m_pct", 0.0) >= min_req_gain or obs_sec == 0)
+                    and p.get("quant_score", 10.0) >= 6.3
+                ][:max(10, slots_needed * 2)]
 
                 for pair in candidate_pairs:
                     if slots_needed <= 0:
                         break
 
                     sym = pair["symbol"]
+                    if self.scanner.tracker.is_cooling_down(sym):
+                        continue
+
+                    velo_1m = pair.get("velocity_1m_pct", 0.0)
+                    if obs_sec > 0 and velo_1m < min_req_gain:
+                        continue
+
+                    # Order Book Spread Guard (Makas Kontrolü)
+                    max_spread = getattr(self.config.strategy, "max_allowed_spread_pct", 0.20)
+                    spread_pct = pair.get("spread_pct", 0.0)
+                    if max_spread > 0 and spread_pct > max_spread:
+                        continue
 
                     can_buy_slot, _ = self.risk_manager.can_open_position(open_count, is_basket_filling=True, symbol=sym)
                     if not can_buy_slot:
                         continue
 
                     cur_p = pair.get("price", 0.0)
-                    engine = None
-                    snap = None
-                    if cur_p <= 0:
-                        engine = self.get_engine_for(sym)
-                        snap = engine.update_market_state()
-                        cur_p = snap.get("price", 0.0) if snap else 0.0
-                    if cur_p <= 0:
-                        continue
-
-                    filter_falling = getattr(self.config.trading, "filter_falling_coins", True)
-                    if filter_falling:
-                        is_approved, obs_reason, elapsed_sec = self.scanner.watchlist.observe(sym, cur_p)
-                        if "ZAMAN AŞIMI" in obs_reason or "düşen bıçak" in obs_reason:
-                            self.log(f"🔄 [{sym}] {obs_reason}")
-                        elif is_approved:
-                            self.log(f"🚀 [{sym}] {obs_reason}")
-
-                        if not is_approved:
-                            continue
-                    else:
-                        obs_reason = "Doğrudan Alım"
-
                     engine = self.get_engine_for(sym)
                     snap = engine.update_market_state()
                     if not snap or snap.get("price", 0) <= 0:
                         snap = {"price": cur_p, "rsi": 50.0, "change_24h_pct": pair.get("change_pct", 0.0)}
+                    if cur_p <= 0:
+                        cur_p = snap.get("price", 0.0)
+                    if cur_p <= 0:
+                        continue
+
+                    # Radar mikro-metriklerini strateji snapshot'ına aktar (Rejim ve Kırılım Teyidi için)
+                    snap["velocity_1m_pct"] = velo_1m
+                    snap["quant_score"] = pair.get("quant_score", 0.0)
+                    snap["volume_surge_ratio"] = pair.get("volume_surge_ratio", 1.0)
+                    snap["burst_ratio"] = pair.get("burst_ratio", 0.0)
 
                     signal, signal_reason = self.strategy.evaluate(snap, open_count)
-
-                    obs_sec = getattr(self.scanner.watchlist, "min_observation_seconds", getattr(self.config.trading, "candidate_observation_seconds", 45))
                     require_strict = getattr(self.config.trading, "require_strict_buy_signal", True)
-                    auto_fill = getattr(self.config.trading, "auto_fill_portfolio", False)
-
-                    # Eğer aday gözlem radarı aktifse ve çifte patlama onayı verildiyse (is_approved=True),
-                    # alım derhal gerçekleştirilir. Aday gözlem kapalıysa (0 sn) teknik gösterge sinyali (BUY) aranır.
-                    if filter_falling and obs_sec > 0:
-                        should_buy = is_approved
-                        buy_reason = f"{obs_reason}"
+                    auto_fill = getattr(self.config.trading, "auto_fill_portfolio", True)
+                    
+                    if require_strict:
+                        should_buy = (signal == "BUY")
                     else:
-                        should_buy = (signal == "BUY") if (require_strict or not auto_fill) else True
-                        buy_reason = f"{signal_reason} ({obs_reason})"
+                        is_overbought_or_dump = (
+                            "Aşırı Alım" in signal_reason 
+                            or "ÇÖKÜŞ" in signal_reason 
+                            or "DEFENSIVE" in signal_reason 
+                            or snap.get("rsi", 50.0) > 68.0
+                        )
+                        should_buy = (signal == "BUY") or (auto_fill and not is_overbought_or_dump)
 
-                    if should_buy:
-                        if per_coin_budget < 10.0:
-                            self.log(f"⚠️ [{sym}] Alım bütçesi yetersiz ({per_coin_budget:.2f} TL < 10 TL minimum). Alım atlandı.")
+                    if not should_buy:
+                        continue
+
+                    # 10 Saniyelik Ön-Alım Düşüş Koruması (Pre-Buy Sniper Anti-Dump Filter)
+                    prebuy_sec = getattr(self.config.trading, "candidate_prebuy_seconds", 10) if obs_sec > 0 else 0
+                    if hasattr(self.scanner, "watchlist") and hasattr(self.scanner.watchlist, "observe_prebuy"):
+                        is_prebuy_ok, prebuy_msg, prebuy_el = self.scanner.watchlist.observe_prebuy(
+                            sym, cur_p, observation_seconds=prebuy_sec, max_allowed_drop_pct=0.30
+                        )
+                        if not is_prebuy_ok:
+                            if "iptal edildi" in prebuy_msg or "düşüş" in prebuy_msg or "Durgunluk" in prebuy_msg:
+                                self.log(f"🛑 [{sym}] {prebuy_msg}")
                             continue
 
-                        if mode == "simulation":
-                            pos = self.simulator.buy(sym, cur_p, per_coin_budget, reason=buy_reason)
-                            if pos:
-                                open_symbols.add(sym)
-                                open_count += 1
-                                slots_needed -= 1
-                                available_cash -= per_coin_budget
-                                self.risk_manager.record_trade_entry(sym)
-                                if sym in self.scanner.watchlist.tracking:
-                                    del self.scanner.watchlist.tracking[sym]
-                                self.log(f"🟢 Portföye Eklendi [{sym}]: Miktar={pos['quantity']:.4f} | Maliyet={per_coin_budget:.2f} TL | Sepet: {open_count}/{target_count} Coin Dolu | Neden: {buy_reason}")
-                        else:
-                            pos = self.live_trader.buy(sym, cur_p, per_coin_budget, reason=buy_reason)
-                            if pos:
-                                open_symbols.add(sym)
-                                open_count += 1
-                                slots_needed -= 1
-                                available_cash -= per_coin_budget
-                                self.risk_manager.record_trade_entry(sym)
-                                if sym in self.scanner.watchlist.tracking:
-                                    del self.scanner.watchlist.tracking[sym]
-                                self.log(f"🟢 CANLI Portföye Eklendi [{sym}]: Miktar={pos['quantity']:.4f} | Sepet: {open_count}/{target_count} | Neden: {buy_reason}")
+                    quant_score = pair.get("quant_score", 0.0)
+                    buy_reason = f"{signal_reason} (1m Hız: %{velo_1m:+.2f} | 10s Teyitli | Quant Skor: {quant_score})"
+
+                    if per_coin_budget < 10.0:
+                        self.log(f"⚠️ [{sym}] Alım bütçesi yetersiz ({per_coin_budget:.2f} TL < 10 TL minimum). Alım atlandı.")
+                        continue
+
+                    if mode == "simulation":
+                        pos = self.simulator.buy(sym, cur_p, per_coin_budget, reason=buy_reason)
+                        if pos:
+                            open_symbols.add(sym)
+                            open_count += 1
+                            slots_needed -= 1
+                            available_cash -= per_coin_budget
+                            self.risk_manager.record_trade_entry(sym)
+                            self.log(f"🟢 Portföye Eklendi [{sym}]: Miktar={pos['quantity']:.4f} | Maliyet={per_coin_budget:.2f} TL | Sepet: {open_count}/{target_count} Coin Dolu | Neden: {buy_reason}")
+                    else:
+                        pos = self.live_trader.buy(sym, cur_p, per_coin_budget, reason=buy_reason)
+                        if pos:
+                            open_symbols.add(sym)
+                            open_count += 1
+                            slots_needed -= 1
+                            available_cash -= per_coin_budget
+                            self.risk_manager.record_trade_entry(sym)
+                            self.log(f"🟢 CANLI Portföye Eklendi [{sym}]: Miktar={pos['quantity']:.4f} | Maliyet={per_coin_budget:.2f} TL | Sepet: {open_count}/{target_count} Coin Dolu | Neden: {buy_reason}")
+
+            # Her 60 saniyede bir 1-dakikalık tur sıfırlanır ve taze referans fiyatlar atanır
+            if round_elapsed >= self.round_duration_seconds and (not is_calibrating):
+                self.current_round += 1
+                self.round_start_time = now
+                self.scanner.reset_round()
+                self.log(f"🔄 [1-DK TUR #{self.current_round-1} TAMAMLANDI] Tüm piyasa referans fiyatları sıfırlandı. Taze referanslarla Tur #{self.current_round} başlatıldı.")
         else:
             # Tekil parite modu (örn. USDT_TRY)
             sym = self.config.trading.symbol
@@ -582,10 +689,12 @@ class BinanceTrBot:
         if self.config.trading.mode == "live":
             summary = self.live_trader.get_summary(current_price)
             closed_trades = self.live_trader.closed_trades
+            open_positions = list(self.live_trader.positions.values())
             equity_curve = []
         else:
             summary = self.simulator.get_summary(current_price)
             closed_trades = self.simulator.closed_trades
+            open_positions = list(self.simulator.positions.values())
             equity_curve = self.simulator.equity_curve
 
         metrics = PerformanceMetrics.calculate(
@@ -607,7 +716,7 @@ class BinanceTrBot:
                 "stop_loss_pct": self.config.strategy.stop_loss_pct,
             },
             "test": {
-                "duration_minutes": int(self.session_duration_seconds / 60),
+                "duration_minutes": int(self.session_duration_seconds / 60) if self.session_duration_seconds else 0,
             }
         }
 
@@ -616,6 +725,8 @@ class BinanceTrBot:
             metrics=metrics,
             closed_trades=closed_trades,
             equity_curve=equity_curve,
+            logs=list(self.logs),
+            open_positions=open_positions,
         )
 
     def get_dashboard_state(self) -> Dict[str, Any]:
@@ -630,12 +741,23 @@ class BinanceTrBot:
         else:
             summary = self.simulator.get_summary(current_price)
 
+        now = time.time()
         elapsed_seconds = 0
         remaining_seconds = 0
         if self.is_running and self.session_start_time:
-            elapsed_seconds = int(time.time() - self.session_start_time)
+            elapsed_seconds = int(now - self.session_start_time)
             if self.session_duration_seconds > 0:
                 remaining_seconds = max(0, self.session_duration_seconds - elapsed_seconds)
+
+        is_calibrating = (
+            self.is_running 
+            and self.session_start_time is not None 
+            and (now < self.calibration_end_time)
+            and not self.calibration_completed
+        )
+        calib_elapsed = min(self.startup_calibration_seconds, elapsed_seconds)
+        calib_rem = max(0, int(self.calibration_end_time - now)) if is_calibrating else 0
+        round_elapsed = int(now - self.round_start_time) if (self.is_running and self.round_start_time > 0) else 0
 
         radar_pairs = getattr(self.scanner, "cached_top_pairs", []) or []
         if not radar_pairs and hasattr(self, "scanner"):
@@ -643,6 +765,17 @@ class BinanceTrBot:
 
         return {
             "is_running": self.is_running,
+            "is_calibrating": is_calibrating,
+            "current_round": self.current_round,
+            "round_elapsed": round_elapsed,
+            "round_duration": self.round_duration_seconds,
+            "calibration": {
+                "active": is_calibrating,
+                "elapsed": calib_elapsed,
+                "total": self.startup_calibration_seconds,
+                "remaining": calib_rem,
+                "progress_pct": min(100, int((calib_elapsed / max(1, self.startup_calibration_seconds)) * 100)),
+            },
             "mode": self.config.trading.mode,
             "symbol": self.config.trading.symbol,
             "strategy": self.config.strategy.active,

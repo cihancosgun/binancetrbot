@@ -42,9 +42,9 @@ def run_cli_session(duration_minutes: int, strategy: Optional[str] = None, symbo
     bot.start(duration_minutes=duration_minutes)
 
     try:
-        while bot.is_running:
+        while bot.is_running or (not getattr(bot, "stop_completed", False) and bot.session_start_time):
             import time
-            time.sleep(1)
+            time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nKullanıcı tarafından durduruldu...")
         bot.stop()
