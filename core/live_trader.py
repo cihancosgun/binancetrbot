@@ -231,6 +231,7 @@ class LiveTraderEngine:
 
         if res.get("code") == 0 and "data" in res:
             order_id = str(res["data"].get("orderId"))
+            actual_cost = round(qty * price, 2)
             pos = {
                 "position_id": order_id,
                 "symbol": symbol,
@@ -238,7 +239,7 @@ class LiveTraderEngine:
                 "current_price": price,
                 "highest_price": price,
                 "quantity": qty,
-                "invested_cost": actual_budget,
+                "invested_cost": actual_cost,
                 "entry_time": time.time(),
                 "entry_reason": reason,
                 "unrealized_pnl": 0.0,
