@@ -140,8 +140,13 @@ class RiskManager:
         Açık pozisyonun kapatılması gerekip gerekmediğini profesyonel kurallarla değerlendirir.
         Döner: (kapatılmalı_mı, neden, anlık_kâr_yüzdesi)
         """
-        entry_price = position["entry_price"]
-        highest_price = position.get("highest_price", entry_price)
+        entry_price = float(position.get("entry_price", 0.0))
+        if current_price <= 0 or entry_price <= 0:
+            return False, "Geçersiz fiyat verisi (0 veya negatif), çıkış değerlendirilmedi", 0.0
+
+        highest_price = float(position.get("highest_price", entry_price))
+        if highest_price <= 0:
+            highest_price = entry_price
 
         if current_price > highest_price:
             highest_price = current_price

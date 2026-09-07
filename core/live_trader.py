@@ -93,7 +93,7 @@ class LiveTraderEngine:
 
             for a in assets:
                 asset_name = a.get("asset", "")
-                if not asset_name or asset_name in ("TRY", "USDT", "USDC", "FDUSD"):
+                if not asset_name or asset_name == "TRY":
                     continue
 
                 free_qty = float(a.get("free", 0.0))
@@ -119,6 +119,9 @@ class LiveTraderEngine:
                     self.positions[p_id]["quantity"] = free_qty
                     self.positions[p_id]["current_price"] = cur_price
                     entry = self.positions[p_id].get("entry_price", cur_price)
+                    if entry <= 0:
+                        entry = cur_price
+                        self.positions[p_id]["entry_price"] = entry
                     self.positions[p_id]["unrealized_pnl"] = round((cur_price - entry) * free_qty, 2)
                     self.positions[p_id]["unrealized_pnl_pct"] = round(((cur_price - entry) / entry * 100.0), 2) if entry > 0 else 0.0
                 else:
@@ -367,13 +370,18 @@ class LiveTraderEngine:
         """
         Açık canlı pozisyonların anlık fiyat ve kâr/zararlarını günceller.
         """
+        if current_price <= 0:
+            return
         for pos in self.positions.values():
-            if pos.get("symbol") == symbol and current_price > 0:
+            if pos.get("symbol") == symbol:
                 pos["current_price"] = current_price
-                if current_price > pos.get("highest_price", pos["entry_price"]):
+                if current_price > pos.get("highest_price", pos.get("entry_price", current_price)):
                     pos["highest_price"] = current_price
-                entry = pos["entry_price"]
-                qty = pos["quantity"]
+                entry = float(pos.get("entry_price", current_price))
+                if entry <= 0:
+                    entry = current_price
+                    pos["entry_price"] = entry
+                qty = float(pos.get("quantity", 0.0))
                 pos["unrealized_pnl"] = round((current_price - entry) * qty, 2)
                 pos["unrealized_pnl_pct"] = round(((current_price - entry) / entry * 100.0), 2) if entry > 0 else 0.0
 
@@ -393,12 +401,20 @@ class LiveTraderEngine:
         open_pos_list = []
         for pos_id, pos in self.positions.items():
             sym = pos.get("symbol", self.symbol)
-            qty = pos.get("quantity", 0.0)
-            entry = pos.get("entry_price", 0.0)
-            cur = pos.get("current_price", entry)
+            qty = float(pos.get("quantity", 0.0))
+            entry = float(pos.get("entry_price", 0.0))
+            cur = float(pos.get("current_price", 0.0))
+            if cur <= 0:
+                cur = entry
+            if entry <= 0:
+                entry = cur
+                pos["entry_price"] = entry
+            if pos.get("current_price", 0.0) <= 0:
+                pos["current_price"] = cur
+
             val = qty * cur
             invested_value += val
-            unrealized = (cur - entry) * qty
+            unrealized = (cur - entry) * qty if entry > 0 else 0.0
             unrealized_pct = ((cur - entry) / entry * 100.0) if entry > 0 else 0.0
             open_pos_list.append({
                 "position_id": pos_id,
@@ -409,6 +425,8 @@ class LiveTraderEngine:
                 "invested_cost": pos.get("invested_cost", entry * qty),
                 "unrealized_pnl": round(unrealized, 2),
                 "unrealized_pnl_pct": round(unrealized_pct, 2),
+                "highest_price": pos.get("highest_price", entry),
+                "breakeven_locked": pos.get("breakeven_locked", False),
             })
 
         total_equity = try_cash + invested_value
@@ -434,6 +452,7 @@ class LiveTraderEngine:
             "total_pnl": round(total_pnl, 2),
             "total_pnl_pct": round(total_pnl_pct, 2),
             "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(sum(p["unrealized_pnl"] for p in open_pos_list), 2),
             "win_rate": round(win_rate, 1),
             "total_trades": total_trades,
             "winning_trades": win_count,

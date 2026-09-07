@@ -340,7 +340,7 @@ class BinanceTrBot:
                 self.log(f"🟢 Sanal Pozisyon Açıldı [{target_symbol}]: Miktar={pos['quantity']:.4f} | Maliyet={trade_budget:.2f} TL")
                 return pos
         else:
-            pos = self.live_trader.buy(price, trade_budget, reason=reason)
+            pos = self.live_trader.buy(target_symbol, price, trade_budget, reason=reason)
             if pos:
                 self.risk_manager.record_trade_entry()
                 self.log(f"🟢 CANLI Pozisyon Açıldı [{target_symbol}]: Miktar={pos['quantity']:.4f}")
@@ -427,8 +427,14 @@ class BinanceTrBot:
                 sym = pos["symbol"]
                 engine = self.get_engine_for(sym)
                 snap = engine.update_market_state()
-                cur_p = snap["price"] if snap and snap["price"] > 0 else pos["current_price"]
-                self.simulator.update_market_price(sym, cur_p)
+                cur_p = snap["price"] if (snap and snap.get("price", 0) > 0) else pos.get("current_price", pos.get("entry_price", 0.0))
+                if cur_p <= 0:
+                    cur_p = pos.get("entry_price", 0.0)
+                if cur_p > 0:
+                    self.simulator.update_market_price(sym, cur_p)
+
+                if cur_p <= 0 or pos.get("entry_price", 0.0) <= 0:
+                    continue
 
                 should_close, reason, pnl_pct = self.risk_manager.evaluate_exit(pos, cur_p)
                 if should_close:
@@ -473,8 +479,14 @@ class BinanceTrBot:
                 sym = pos["symbol"]
                 engine = self.get_engine_for(sym)
                 snap = engine.update_market_state()
-                cur_p = snap["price"] if snap and snap["price"] > 0 else pos["entry_price"]
-                self.live_trader.update_market_price(sym, cur_p)
+                cur_p = snap["price"] if (snap and snap.get("price", 0) > 0) else pos.get("current_price", pos.get("entry_price", 0.0))
+                if cur_p <= 0:
+                    cur_p = pos.get("entry_price", 0.0)
+                if cur_p > 0:
+                    self.live_trader.update_market_price(sym, cur_p)
+
+                if cur_p <= 0 or pos.get("entry_price", 0.0) <= 0:
+                    continue
 
                 should_close, reason, pnl_pct = self.risk_manager.evaluate_exit(pos, cur_p)
                 if should_close:
