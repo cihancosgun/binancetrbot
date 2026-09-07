@@ -197,8 +197,9 @@ class RiskManager:
         # 5. Erken Momentum İptali (Early Invalidation Cut - Sahte Kırılım Koruması)
         entry_time = position.get("entry_time", 0.0)
         holding_sec = time.time() - entry_time if entry_time > 0 else 0
-        if holding_sec >= 25.0 and peak_gain_pct < 0.20 and pnl_pct <= -0.55:
-            return True, f"🛑 ERKEN MOMENTUM KESİMİ: Sahte kırılım sınırlandı ({pnl_pct:.2f}% <= -0.55%), tam stop-loss'tan kaçınıldı", pnl_pct
+        early_cut_sl = max(0.65, eff_sl * 0.70)
+        if holding_sec >= 45.0 and peak_gain_pct < 0.20 and pnl_pct <= -early_cut_sl:
+            return True, f"🛑 ERKEN MOMENTUM KESİMİ: Sahte kırılım sınırlandı ({pnl_pct:.2f}% <= -{early_cut_sl:.2f}%), tam stop-loss'tan kaçınıldı", pnl_pct
 
         # 6. Hareketsizlik / Durgunluk Tahliyesi (Stagnation Exit)
         if entry_time > 0 and (holding_sec >= self.max_holding_seconds):

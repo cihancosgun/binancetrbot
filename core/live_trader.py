@@ -429,14 +429,17 @@ class LiveTraderEngine:
                 "breakeven_locked": pos.get("breakeven_locked", False),
             })
 
-        total_equity = try_cash + invested_value
-        if self.session_initial_balance is None and total_equity > 0:
-            self.session_initial_balance = total_equity
+        if self.session_initial_balance is None and (try_cash > 0 or invested_value > 0):
+            self.session_initial_balance = try_cash + invested_value
 
-        initial_balance = self.session_initial_balance or total_equity
+        initial_balance = self.session_initial_balance or (try_cash + invested_value)
         realized_pnl = sum(t.get("net_pnl", 0.0) for t in self.closed_trades)
-        total_pnl = (total_equity - initial_balance) if initial_balance > 0 else 0.0
+        unrealized_pnl = sum(p["unrealized_pnl"] for p in open_pos_list)
+        
+        # REST API bakiye güncelleme gecikmesinden (settlement lag) etkilenmeyen sağlam K/Z hesabı
+        total_pnl = realized_pnl + unrealized_pnl
         total_pnl_pct = (total_pnl / initial_balance * 100.0) if initial_balance > 0 else 0.0
+        total_equity = initial_balance + total_pnl
 
         win_count = sum(1 for t in self.closed_trades if t.get("is_win", False))
         total_trades = len(self.closed_trades)
@@ -452,7 +455,7 @@ class LiveTraderEngine:
             "total_pnl": round(total_pnl, 2),
             "total_pnl_pct": round(total_pnl_pct, 2),
             "realized_pnl": round(realized_pnl, 2),
-            "unrealized_pnl": round(sum(p["unrealized_pnl"] for p in open_pos_list), 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
             "win_rate": round(win_rate, 1),
             "total_trades": total_trades,
             "winning_trades": win_count,
