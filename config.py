@@ -1,7 +1,7 @@
 import os
 import yaml
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Dict, Any, List
 
 @dataclass
 class TradingConfig:
@@ -137,6 +137,94 @@ def resolve_config_path(config_path: Optional[str] = None, mode: Optional[str] =
 
     return default_target
 
+def mask_string(val: str, keep_chars: int = 4) -> str:
+    if not val:
+        return ""
+    if len(val) <= keep_chars * 2:
+        return "*" * len(val)
+    return val[:keep_chars] + "*" * (len(val) - keep_chars * 2) + val[-keep_chars:]
+
+def config_to_dict(config: BotConfig, mask_secrets: bool = False) -> Dict[str, Any]:
+    """
+    BotConfig nesnesini JSON/REST API için sözlüğe çevirir.
+    mask_secrets True ise secret_key ve password maskelenir.
+    """
+    data = asdict(config)
+    if mask_secrets:
+        if data.get("api", {}).get("secret_key"):
+            data["api"]["secret_key_masked"] = mask_string(data["api"]["secret_key"])
+            data["api"]["has_secret_key"] = bool(data["api"]["secret_key"])
+        else:
+            data["api"]["secret_key_masked"] = ""
+            data["api"]["has_secret_key"] = False
+
+        if data.get("auth", {}).get("password"):
+            data["auth"]["has_password"] = bool(data["auth"]["password"])
+            data["auth"]["password"] = "********"
+    return data
+
+def update_config_from_dict(config: BotConfig, data: Dict[str, Any]) -> BotConfig:
+    """
+    Sözlük verilerini doğrular ve mevcut BotConfig nesnesine uygular.
+    """
+    def _update_section(obj, section_dict):
+        if not section_dict or not isinstance(section_dict, dict):
+            return
+        fields = obj.__dataclass_fields__
+        for k, v in section_dict.items():
+            if k in fields:
+                field_type = fields[k].type
+                try:
+                    # Özel durum: Parola veya Secret Key '********' ise güncelleme yapma (eskiyi koru)
+                    if (k in ("secret_key", "password")) and (v == "********" or v == "" or v is None):
+                        continue
+                    if field_type == int:
+                        setattr(obj, k, int(v))
+                    elif field_type == float:
+                        setattr(obj, k, float(v))
+                    elif field_type == bool:
+                        if isinstance(v, str):
+                            setattr(obj, k, v.lower() in ("true", "1", "yes"))
+                        else:
+                            setattr(obj, k, bool(v))
+                    elif field_type == str:
+                        setattr(obj, k, str(v))
+                    else:
+                        setattr(obj, k, v)
+                except (ValueError, TypeError):
+                    setattr(obj, k, v)
+
+    _update_section(config.trading, data.get("trading"))
+    _update_section(config.strategy, data.get("strategy"))
+    _update_section(config.test, data.get("test"))
+    _update_section(config.api, data.get("api"))
+    _update_section(config.server, data.get("server"))
+    _update_section(config.auth, data.get("auth"))
+
+    if "loaded_config_path" in data and data["loaded_config_path"]:
+        config.loaded_config_path = str(data["loaded_config_path"])
+
+    return config
+
+def get_available_config_files() -> List[Dict[str, Any]]:
+    """
+    Mevcut yapılandırma dosyalarını listeler.
+    """
+    known_files = [
+        {"name": "config.test.yaml", "mode": "simulation", "description": "Sanal Para Test Profili"},
+        {"name": "config.live.yaml", "mode": "live", "description": "Binance TR Canlı Borsa Profili"},
+        {"name": "config.yaml", "mode": "simulation", "description": "Genel Yapılandırma"},
+    ]
+    result = []
+    for k in known_files:
+        exists = os.path.exists(k["name"])
+        result.append({
+            **k,
+            "exists": exists,
+            "path": os.path.abspath(k["name"]) if exists else None
+        })
+    return result
+
 def load_config(config_path: Optional[str] = None, mode: Optional[str] = None) -> BotConfig:
     """
     Yapılandırma dosyasını yükler. 'test' veya 'live' moduna göre ilgili YAML dosyasını seçer.
@@ -182,71 +270,23 @@ def load_config(config_path: Optional[str] = None, mode: Optional[str] = None) -
 
     return cfg
 
-def save_config(config: BotConfig, config_path: Optional[str] = None) -> None:
+def save_config(config: BotConfig, config_path: Optional[str] = None) -> str:
     """
-    Yapılandırmayı YAML dosyasına kaydeder. Dosya belirtilmemişse aktif yüklenen dosyaya kaydeder.
+    Yapılandırmayı YAML dosyasına eksiksiz kaydeder. Dosya belirtilmemişse aktif yüklenen dosyaya kaydeder.
     """
     target_path = config_path or getattr(config, "loaded_config_path", None) or resolve_config_path(mode=config.trading.mode)
 
     data = {
-        "trading": {
-            "mode": config.trading.mode,
-            "symbol": config.trading.symbol,
-            "auto_select_coin": config.trading.auto_select_coin,
-            "target_coins_count": config.trading.target_coins_count,
-            "auto_fill_portfolio": config.trading.auto_fill_portfolio,
-            "top_coins_limit": config.trading.top_coins_limit,
-            "initial_virtual_balance": config.trading.initial_virtual_balance,
-            "budget_per_trade": config.trading.budget_per_trade,
-            "max_open_positions": config.trading.max_open_positions,
-            "min_24h_volume_try": getattr(config.trading, "min_24h_volume_try", 5000000.0),
-            "candidate_observation_seconds": getattr(config.trading, "candidate_observation_seconds", 45),
-            "min_observation_gain_pct": getattr(config.trading, "min_observation_gain_pct", 1.0),
-            "candidate_min_burst_count": getattr(config.trading, "candidate_min_burst_count", 2),
-            "candidate_timeout_cooldown_seconds": getattr(config.trading, "candidate_timeout_cooldown_seconds", 5),
-            "filter_falling_coins": getattr(config.trading, "filter_falling_coins", True),
-            "only_uptrend": getattr(config.trading, "only_uptrend", True),
-            "min_24h_gain_pct": getattr(config.trading, "min_24h_gain_pct", 0.0),
-            "fee_rate_pct": config.trading.fee_rate_pct,
-            "prevent_rebuy_churn": getattr(config.trading, "prevent_rebuy_churn", True),
-        },
-        "test": {
-            "duration_minutes": config.test.duration_minutes,
-            "auto_stop": config.test.auto_stop,
-        },
-        "strategy": {
-            "active": config.strategy.active,
-            "take_profit_pct": config.strategy.take_profit_pct,
-            "stop_loss_pct": config.strategy.stop_loss_pct,
-            "trailing_stop_pct": config.strategy.trailing_stop_pct,
-            "trailing_activation_pct": getattr(config.strategy, "trailing_activation_pct", 0.20),
-            "portfolio_stop_loss_pct": getattr(config.strategy, "portfolio_stop_loss_pct", 2.0),
-            "fee_multiplier": getattr(config.strategy, "fee_multiplier", 2.0),
-            "cooldown_seconds": config.strategy.cooldown_seconds,
-            "symbol_cooldown_seconds": getattr(config.strategy, "symbol_cooldown_seconds", 60),
-            "rsi_period": config.strategy.rsi_period,
-            "rsi_oversold": config.strategy.rsi_oversold,
-            "rsi_overbought": config.strategy.rsi_overbought,
-            "bollinger_period": config.strategy.bollinger_period,
-            "bollinger_std_dev": config.strategy.bollinger_std_dev,
-            "ema_fast": config.strategy.ema_fast,
-            "ema_slow": config.strategy.ema_slow,
-        },
-        "api": {
-            "base_url": config.api.base_url,
-            "ws_url": config.api.ws_url,
-            "api_key": config.api.api_key,
-            "secret_key": config.api.secret_key,
-        },
-        "server": {
-            "host": config.server.host,
-            "port": config.server.port,
-        },
-        "auth": {
-            "enabled": config.auth.enabled,
-            "username": config.auth.username,
-            "password": config.auth.password,
-        },
+        "trading": asdict(config.trading),
+        "test": asdict(config.test),
+        "strategy": asdict(config.strategy),
+        "api": asdict(config.api),
+        "server": asdict(config.server),
+        "auth": asdict(config.auth),
     }
+
     with open(target_path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    config.loaded_config_path = target_path
+    return target_path

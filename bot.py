@@ -3,7 +3,7 @@ import threading
 import logging
 from typing import Dict, Any, Optional
 
-from config import BotConfig, load_config, save_config
+from config import BotConfig, load_config, save_config, config_to_dict
 from core.binance_client import BinanceTrClient
 from core.market_data import MarketDataEngine
 from core.market_scanner import MarketScanner
@@ -114,6 +114,69 @@ class BinanceTrBot:
         self.round_duration_seconds: int = 60
         is_live = self.config.trading.mode == "live"
         self.current_status_text: str = "Hazır - Canlı İşlem Bekleniyor" if is_live else "Hazır - Test Bekleniyor"
+
+    def apply_config(self, new_config: Optional[BotConfig] = None) -> None:
+        """
+        Yeni veya güncellenmiş yapılandırmayı çalışan tüm bot alt bileşenlerine uygular.
+        """
+        if new_config:
+            self.config = new_config
+
+        # 1. API İstemcisi
+        if hasattr(self, "client") and self.client:
+            self.client.api_key = self.config.api.api_key
+            self.client.secret_key = self.config.api.secret_key
+            self.client.base_url = self.config.api.base_url
+
+        # 2. Piyasa Radarı & Tarayıcı
+        if hasattr(self, "scanner") and self.scanner:
+            self.scanner.min_volume_try = getattr(self.config.trading, "min_24h_volume_try", 5000000.0)
+            self.scanner.min_coin_price = getattr(self.config.trading, "min_coin_price", 0.05)
+            self.scanner.watchlist.min_observation_seconds = getattr(self.config.trading, "candidate_observation_seconds", 15)
+            self.scanner.watchlist.min_gain_pct = getattr(self.config.trading, "min_observation_gain_pct", 0.50)
+            self.scanner.watchlist.timeout_cooldown_seconds = getattr(self.config.trading, "candidate_timeout_cooldown_seconds", 10)
+            self.scanner.watchlist.min_burst_count = getattr(self.config.trading, "candidate_min_burst_count", 1)
+
+        # 3. Risk Yöneticisi
+        if hasattr(self, "risk_manager") and self.risk_manager:
+            self.risk_manager.take_profit_pct = self.config.strategy.take_profit_pct
+            self.risk_manager.partial_tp_pct = getattr(self.config.strategy, "partial_tp_pct", 0.85)
+            self.risk_manager.partial_tp_ratio = getattr(self.config.strategy, "partial_tp_ratio", 0.50)
+            self.risk_manager.enable_partial_tp = getattr(self.config.strategy, "enable_partial_tp", True)
+            self.risk_manager.stop_loss_pct = self.config.strategy.stop_loss_pct
+            self.risk_manager.trailing_stop_pct = self.config.strategy.trailing_stop_pct
+            self.risk_manager.trailing_activation_pct = getattr(self.config.strategy, "trailing_activation_pct", 0.75)
+            self.risk_manager.breakeven_trigger_pct = getattr(self.config.strategy, "breakeven_trigger_pct", 0.45)
+            self.risk_manager.max_holding_seconds = getattr(self.config.strategy, "max_holding_seconds", 300)
+            self.risk_manager.cooldown_seconds = getattr(self.config.strategy, "cooldown_seconds", 5)
+            self.risk_manager.symbol_cooldown_seconds = getattr(self.config.strategy, "symbol_cooldown_seconds", 30)
+            self.risk_manager.loss_cooldown_seconds = getattr(self.config.strategy, "loss_cooldown_seconds", 180)
+            self.risk_manager.max_open_positions = self.config.trading.max_open_positions
+            self.risk_manager.fee_rate_pct = self.config.trading.fee_rate_pct
+            self.risk_manager.portfolio_stop_loss_pct = getattr(self.config.strategy, "portfolio_stop_loss_pct", 2.5)
+            self.risk_manager.prevent_rebuy_churn = getattr(self.config.trading, "prevent_rebuy_churn", False)
+
+        # 4. Simülatör & Canlı İşlem Motoru
+        if hasattr(self, "simulator") and self.simulator:
+            self.simulator.fee_rate_pct = self.config.trading.fee_rate_pct
+        if hasattr(self, "live_trader") and self.live_trader:
+            self.live_trader.max_open_positions = self.config.trading.max_open_positions
+            self.live_trader.symbol = self.config.trading.symbol
+
+        # 5. Strateji
+        self.strategy = self._init_strategy()
+
+        # 6. Süre ve Parite
+        if not self.is_running:
+            self.session_duration_seconds = self.config.test.duration_minutes * 60
+            dur_min = getattr(self.config.test, "duration_minutes", 15)
+            self.startup_calibration_seconds = 20.0 if dur_min <= 5 else 60.0
+
+        default_sym = "SOL_TRY" if self.config.trading.symbol == "AUTO" else self.config.trading.symbol
+        self.market_data = self.get_engine_for(default_sym)
+        is_live = self.config.trading.mode == "live"
+        if not self.is_running:
+            self.current_status_text = "Hazır - Canlı İşlem Bekleniyor" if is_live else "Hazır - Test Bekleniyor"
 
     def _init_strategy(self):
         strat_name = self.config.strategy.active
@@ -785,26 +848,12 @@ class BinanceTrBot:
             "market": self.latest_snapshot,
             "portfolio": summary,
             "config": {
-                "budget_per_trade": self.config.trading.budget_per_trade,
-                "take_profit_pct": self.config.strategy.take_profit_pct,
-                "stop_loss_pct": self.config.strategy.stop_loss_pct,
-                "trailing_stop_pct": self.config.strategy.trailing_stop_pct,
-                "trailing_activation_pct": getattr(self.config.strategy, "trailing_activation_pct", 0.20),
-                "portfolio_stop_loss_pct": getattr(self.config.strategy, "portfolio_stop_loss_pct", 2.0),
-                "symbol_cooldown_seconds": getattr(self.config.strategy, "symbol_cooldown_seconds", 60),
-                "rsi_oversold": self.config.strategy.rsi_oversold,
-                "rsi_overbought": self.config.strategy.rsi_overbought,
-                "auto_select_coin": self.config.trading.auto_select_coin,
-                "target_coins_count": getattr(self.config.trading, "target_coins_count", 5),
-                "auto_fill_portfolio": getattr(self.config.trading, "auto_fill_portfolio", True),
-                "candidate_observation_seconds": getattr(self.config.trading, "candidate_observation_seconds", 45),
-                "min_observation_gain_pct": getattr(self.config.trading, "min_observation_gain_pct", 1.5),
-                "candidate_min_burst_count": getattr(self.config.trading, "candidate_min_burst_count", 2),
-                "candidate_timeout_cooldown_seconds": getattr(self.config.trading, "candidate_timeout_cooldown_seconds", 5),
-                "filter_falling_coins": getattr(self.config.trading, "filter_falling_coins", True),
-                "only_uptrend": getattr(self.config.trading, "only_uptrend", True),
-                "prevent_rebuy_churn": getattr(self.config.trading, "prevent_rebuy_churn", True),
+                **config_to_dict(self.config, mask_secrets=True).get("trading", {}),
+                **config_to_dict(self.config, mask_secrets=True).get("strategy", {}),
+                "loaded_config_path": getattr(self.config, "loaded_config_path", "config.test.yaml"),
             },
+            "full_config": config_to_dict(self.config, mask_secrets=True),
+            "loaded_config_path": getattr(self.config, "loaded_config_path", "config.test.yaml"),
             "status_text": self.current_status_text,
             "current_regime": getattr(self.strategy, "current_regime", "RANGING"),
             "step_count": self.step_count,

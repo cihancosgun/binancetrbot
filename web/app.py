@@ -8,7 +8,14 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
 from bot import BinanceTrBot
-from config import load_config, save_config
+from config import (
+    load_config,
+    save_config,
+    config_to_dict,
+    update_config_from_dict,
+    get_available_config_files,
+    BotConfig,
+)
 
 from contextlib import asynccontextmanager
 
@@ -102,6 +109,23 @@ class ConfigUpdateRequest(BaseModel):
     filter_falling_coins: Optional[bool] = None
     only_uptrend: Optional[bool] = None
 
+class FullConfigRequest(BaseModel):
+    trading: Optional[Dict[str, Any]] = None
+    strategy: Optional[Dict[str, Any]] = None
+    test: Optional[Dict[str, Any]] = None
+    api: Optional[Dict[str, Any]] = None
+    server: Optional[Dict[str, Any]] = None
+    auth: Optional[Dict[str, Any]] = None
+    loaded_config_path: Optional[str] = None
+
+class SwitchModeRequest(BaseModel):
+    mode: str
+
+class TestApiRequest(BaseModel):
+    api_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    base_url: Optional[str] = None
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -155,14 +179,129 @@ async def index(request: Request):
 async def get_state():
     return bot_instance.get_dashboard_state()
 
+@app.get("/api/config/full")
+async def get_full_config():
+    """
+    Tüm konfigürasyonu, yüklü dosya yolunu ve mevcut profil dosyalarını döndürür.
+    """
+    return {
+        "status": "success",
+        "config": config_to_dict(bot_instance.config, mask_secrets=True),
+        "loaded_config_path": getattr(bot_instance.config, "loaded_config_path", "config.test.yaml"),
+        "available_files": get_available_config_files(),
+        "active_mode": bot_instance.config.trading.mode,
+    }
+
+@app.post("/api/config/full")
+async def update_full_config(req: FullConfigRequest):
+    """
+    Tüm ayarları kaydeder, YAML dosyasına yazar ve bota anında uygular.
+    """
+    payload = req.model_dump(exclude_unset=True)
+    update_config_from_dict(bot_instance.config, payload)
+    saved_path = save_config(bot_instance.config)
+    bot_instance.apply_config()
+    return {
+        "status": "success",
+        "message": f"Tüm ayarlar başarıyla kaydedildi ({saved_path}) ve bota uygulandı.",
+        "config": config_to_dict(bot_instance.config, mask_secrets=True),
+        "loaded_config_path": saved_path,
+    }
+
+@app.post("/api/config/switch_mode")
+async def switch_mode(req: SwitchModeRequest):
+    """
+    Bot modunu (simulation / live) değiştirir ve ilgili profili yükler.
+    """
+    new_mode = req.mode.lower()
+    if new_mode not in ("simulation", "test", "live", "prod"):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Geçersiz mod."})
+    
+    new_cfg = load_config(mode=new_mode)
+    bot_instance.apply_config(new_cfg)
+    return {
+        "status": "success",
+        "message": f"Mod başarıyla '{new_mode}' olarak değiştirildi.",
+        "mode": bot_instance.config.trading.mode,
+        "config": config_to_dict(bot_instance.config, mask_secrets=True),
+        "loaded_config_path": bot_instance.config.loaded_config_path,
+    }
+
+@app.post("/api/config/reset_default")
+async def reset_default_config(req: SwitchModeRequest):
+    """
+    Yapılandırmayı varsayılan şablona sıfırlar.
+    """
+    mode = "live" if req.mode in ("live", "prod") else "simulation"
+    new_cfg = BotConfig()
+    new_cfg.trading.mode = mode
+    saved_path = save_config(new_cfg)
+    bot_instance.apply_config(new_cfg)
+    return {
+        "status": "success",
+        "message": f"Yapılandırma varsayılan ayarlara sıfırlandı.",
+        "config": config_to_dict(bot_instance.config, mask_secrets=True),
+        "loaded_config_path": saved_path,
+    }
+
+@app.post("/api/test_api")
+async def test_api_connection(req: TestApiRequest):
+    """
+    Binance TR API bağlantısını ve kimlik doğrulamasını test eder.
+    """
+    api_k = req.api_key or bot_instance.config.api.api_key
+    sec_k = req.secret_key or bot_instance.config.api.secret_key
+    base_u = req.base_url or bot_instance.config.api.base_url
+
+    if not api_k or api_k == "BURAYA_BINANCE_TR_API_KEY_GIRINIZ":
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Geçerli bir API Key girilmedi."})
+
+    from core.binance_client import BinanceTrClient
+    test_client = BinanceTrClient(api_key=api_k, secret_key=sec_k, base_url=base_u)
+    try:
+        # 1. Ping testi
+        ping_ok = test_client.ping()
+        if not ping_ok:
+            return JSONResponse(status_code=400, content={"status": "error", "message": "Binance TR sunucusuna erişilemedi (Ping başarısız)."})
+        
+        # 2. Borsa saati testi
+        server_time = test_client.get_server_time()
+        
+        # 3. Eğer secret key varsa hesap bakiyesi sorgulayarak yetkiyi test et
+        has_auth = False
+        balances = []
+        if sec_k and sec_k != "BURAYA_BINANCE_TR_SECRET_KEY_GIRINIZ" and sec_k != "********":
+            try:
+                account = test_client.get_account_info()
+                if isinstance(account, dict) and (account.get("code") == 0 or "balances" in account or "data" in account):
+                    has_auth = True
+                    raw_bal = account.get("data", {}).get("balances", account.get("balances", []))
+                    if isinstance(raw_bal, list):
+                        balances = [b for b in raw_bal if float(b.get("free", 0)) > 0 or float(b.get("locked", 0)) > 0][:5]
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "message": "Binance TR API bağlantısı başarılı!",
+            "server_time": server_time,
+            "authenticated": has_auth,
+            "sample_balances": balances,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": f"API Test Hatası: {str(e)}"})
+    finally:
+        try:
+            test_client.session.close()
+        except Exception:
+            pass
+
 @app.post("/api/start")
 async def start_bot(req: StartRequest):
     if req.strategy:
         bot_instance.config.strategy.active = req.strategy
-        bot_instance.strategy = bot_instance._init_strategy()
     if req.symbol:
         bot_instance.config.trading.symbol = req.symbol
-        bot_instance.market_data.symbol = req.symbol
     if req.budget_per_trade:
         bot_instance.config.trading.budget_per_trade = req.budget_per_trade
     if req.auto_select_coin is not None:
@@ -170,25 +309,20 @@ async def start_bot(req: StartRequest):
     if req.target_coins_count is not None:
         bot_instance.config.trading.target_coins_count = req.target_coins_count
         bot_instance.config.trading.max_open_positions = req.target_coins_count
-        bot_instance.risk_manager.max_open_positions = req.target_coins_count
     if req.candidate_observation_seconds is not None:
         bot_instance.config.trading.candidate_observation_seconds = req.candidate_observation_seconds
-        bot_instance.scanner.watchlist.min_observation_seconds = req.candidate_observation_seconds
     if req.min_observation_gain_pct is not None:
         bot_instance.config.trading.min_observation_gain_pct = req.min_observation_gain_pct
-        bot_instance.scanner.watchlist.min_gain_pct = req.min_observation_gain_pct
     if req.candidate_min_burst_count is not None:
         bot_instance.config.trading.candidate_min_burst_count = req.candidate_min_burst_count
-        bot_instance.scanner.watchlist.min_burst_count = req.candidate_min_burst_count
     if req.trailing_activation_pct is not None:
         bot_instance.config.strategy.trailing_activation_pct = req.trailing_activation_pct
-        bot_instance.risk_manager.trailing_activation_pct = req.trailing_activation_pct
     if req.symbol_cooldown_seconds is not None:
         bot_instance.config.strategy.symbol_cooldown_seconds = req.symbol_cooldown_seconds
-        bot_instance.risk_manager.symbol_cooldown_seconds = req.symbol_cooldown_seconds
     if req.only_uptrend is not None:
         bot_instance.config.trading.only_uptrend = req.only_uptrend
 
+    bot_instance.apply_config()
     bot_instance.start(duration_minutes=req.duration_minutes)
     return {"status": "started", "duration": req.duration_minutes}
 
@@ -225,27 +359,20 @@ async def update_config(req: ConfigUpdateRequest):
     cfg = bot_instance.config
     if req.take_profit_pct is not None:
         cfg.strategy.take_profit_pct = req.take_profit_pct
-        bot_instance.risk_manager.take_profit_pct = req.take_profit_pct
     if req.stop_loss_pct is not None:
         cfg.strategy.stop_loss_pct = req.stop_loss_pct
-        bot_instance.risk_manager.stop_loss_pct = req.stop_loss_pct
     if req.trailing_stop_pct is not None:
         cfg.strategy.trailing_stop_pct = req.trailing_stop_pct
-        bot_instance.risk_manager.trailing_stop_pct = req.trailing_stop_pct
     if req.trailing_activation_pct is not None:
         cfg.strategy.trailing_activation_pct = req.trailing_activation_pct
-        bot_instance.risk_manager.trailing_activation_pct = req.trailing_activation_pct
     if req.symbol_cooldown_seconds is not None:
         cfg.strategy.symbol_cooldown_seconds = req.symbol_cooldown_seconds
-        bot_instance.risk_manager.symbol_cooldown_seconds = req.symbol_cooldown_seconds
     if req.budget_per_trade is not None:
         cfg.trading.budget_per_trade = req.budget_per_trade
     if req.strategy is not None:
         cfg.strategy.active = req.strategy
-        bot_instance.strategy = bot_instance._init_strategy()
     if req.symbol is not None:
         cfg.trading.symbol = req.symbol
-        bot_instance.market_data.symbol = req.symbol
     if req.rsi_oversold is not None:
         cfg.strategy.rsi_oversold = req.rsi_oversold
     if req.rsi_overbought is not None:
@@ -255,23 +382,20 @@ async def update_config(req: ConfigUpdateRequest):
     if req.target_coins_count is not None:
         cfg.trading.target_coins_count = req.target_coins_count
         cfg.trading.max_open_positions = req.target_coins_count
-        bot_instance.risk_manager.max_open_positions = req.target_coins_count
     if req.auto_fill_portfolio is not None:
         cfg.trading.auto_fill_portfolio = req.auto_fill_portfolio
     if req.candidate_observation_seconds is not None:
         cfg.trading.candidate_observation_seconds = req.candidate_observation_seconds
-        bot_instance.scanner.watchlist.min_observation_seconds = req.candidate_observation_seconds
     if req.min_observation_gain_pct is not None:
         cfg.trading.min_observation_gain_pct = req.min_observation_gain_pct
-        bot_instance.scanner.watchlist.min_gain_pct = req.min_observation_gain_pct
     if req.candidate_min_burst_count is not None:
         cfg.trading.candidate_min_burst_count = req.candidate_min_burst_count
-        bot_instance.scanner.watchlist.min_burst_count = req.candidate_min_burst_count
     if req.filter_falling_coins is not None:
         cfg.trading.filter_falling_coins = req.filter_falling_coins
     if req.only_uptrend is not None:
         cfg.trading.only_uptrend = req.only_uptrend
 
+    bot_instance.apply_config()
     save_config(cfg)
     return {"status": "updated", "config": bot_instance.get_dashboard_state()["config"]}
 
@@ -282,3 +406,4 @@ async def list_reports():
     files = [f for f in os.listdir(REPORTS_DIR) if f.endswith(".html")]
     files.sort(reverse=True)
     return [{"filename": f, "path": f"/reports/{f}"} for f in files]
+

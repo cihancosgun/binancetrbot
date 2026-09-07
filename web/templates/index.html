@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Binance TR Al-Sat Botu | Canlı Takip & Test Paneli</title>
+  <title>Binance TR Al-Sat Botu | Canlı Takip & Yönetim Paneli</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -18,6 +18,9 @@
         </div>
       </div>
       <div class="header-status">
+        <button type="button" id="btn-open-settings" class="badge" style="cursor: pointer; background: rgba(245, 158, 11, 0.18); color: var(--accent); border: 1px solid rgba(245, 158, 11, 0.4); font-size: 13px; padding: 7px 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" title="Tüm Bot Yapılandırmasını Düzenle">
+          ⚙️ Tüm Ayarlar
+        </button>
         <span id="badge-mode" class="badge" style="background: rgba(245, 158, 11, 0.2); color: var(--accent);">MOD: SANAL PARA (PAPER TRADING)</span>
         <span id="status-badge" class="badge badge-stopped">
           <span class="badge-pulse"></span> BEKLEMEDE
@@ -100,9 +103,14 @@
           </div>
         </div>
 
-        <!-- Strategy & Test Settings Card -->
+        <!-- Strategy & Quick Settings Card -->
         <div class="card">
-          <h3 style="font-size: 15px; margin-bottom: 16px; color: var(--accent);">⚙️ Test ve Strateji Parametreleri</h3>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 15px; margin-bottom: 0; color: var(--accent);">⚙️ Hızlı Parametreler</h3>
+            <button type="button" class="badge" style="cursor: pointer; background: rgba(245, 158, 11, 0.15); color: var(--accent); border: 1px solid rgba(245, 158, 11, 0.3); font-size: 11px; padding: 4px 10px;" onclick="openSettingsModal()">
+              Tüm Ayarlar ↗
+            </button>
+          </div>
 
           <!-- Otomatik Coin Seçimi Toggle -->
           <div class="form-group" style="background: rgba(245, 158, 11, 0.08); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25);">
@@ -118,7 +126,7 @@
           <div class="form-group">
             <label for="select-strategy">Aktif Algoritmik Strateji</label>
             <select id="select-strategy">
-              <option value="adaptive_regime" selected>🧠 Hibrit Piyasa Rejimi & Quant Momentum (Trend / Pullback / Savunma - Önerilen)</option>
+              <option value="adaptive_regime" selected>🧠 Hibrit Piyasa Rejimi & Quant Momentum (Önerilen)</option>
               <option value="fee_recovery">🎯 Komisyon Kurtaran Strateji (Binance TR Komisyon Tabanlı)</option>
               <option value="momentum_ema">📈 Momentum EMA Kesişimi (Trend Takibi)</option>
               <option value="rsi_bollinger">📊 RSI + Bollinger Scalper (Dip Al / Tepe Sat)</option>
@@ -147,22 +155,19 @@
             <label for="input-target-coins" style="font-weight: 600; color: #93c5fd;">🎯 Portföydeki Hedef Farklı Coin Sayısı (En Az 5)</label>
             <input type="number" id="input-target-coins" value="5" min="1" max="15">
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-              Bütün bütçe tek coine yatırılmaz; en az 5 farklı hareketli coine dağıtılır. Biri kârla satıldığında yerine derhal yeni bir hareketli coin alınarak sepet sürekli dolu tutulur.
+              Bütçe tek coine yatırılmaz; en az 5 farklı hareketli coine dağıtılır. Biri satıldığında yerine yenisi alınır.
             </div>
           </div>
 
           <div class="form-group" style="background: rgba(16, 185, 129, 0.08); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.25);">
             <label for="input-obs-seconds" style="font-weight: 600; color: #6ee7b7;">⏱️ Aday Coin Gözlem Süresi (Saniye)</label>
             <input type="number" id="input-obs-seconds" value="15" min="0" max="180">
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-              Bot hareketli coini hemen almaz; anlık fiyat ivmesini ve yönünü teyit eder. Düşen bıçakları eler, momentumu onaylananları seçer.
-            </div>
           </div>
 
           <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; background: rgba(59, 130, 246, 0.06); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
             <div>
-              <label for="check-only-uptrend" style="margin-bottom: 0; cursor: pointer; font-weight: 600; color: #93c5fd;">📈 Sadece Yükselen Coinler (Trend Filtresi)</label>
-              <div style="font-size: 11px; color: var(--text-muted);">24 saatlikte çakılan (%-15, %-20) coinleri eler, pozitif momentumu olanları seçer.</div>
+              <label for="check-only-uptrend" style="margin-bottom: 0; cursor: pointer; font-weight: 600; color: #93c5fd;">📈 Sadece Yükselen Coinler</label>
+              <div style="font-size: 11px; color: var(--text-muted);">Düşüş trendindeki coinleri eler.</div>
             </div>
             <input type="checkbox" id="check-only-uptrend" checked style="width: 20px; height: 20px; cursor: pointer;">
           </div>
@@ -190,11 +195,8 @@
             </div>
             <div class="form-group">
               <label for="input-trailing-act">Min Kâr Aktivasyonu (%)</label>
-              <input type="number" id="input-trailing-act" value="1.00" step="0.05" title="Trailing Stop ancak pozisyon en az bu oranda kâra geçtikten sonra devreye girer.">
+              <input type="number" id="input-trailing-act" value="1.00" step="0.05">
             </div>
-          </div>
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 12px;">
-            🛡️ <b>Breakeven Koruması:</b> +%0.90 kâr görüldüğünde Stop maliyet + komisyona çekilir; pozisyon sıfır riskle korunur.
           </div>
 
           <button id="btn-save-config" class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;">
@@ -318,6 +320,510 @@
       </div>
     </div>
   </div>
+
+  <!-- Full Configuration Modal -->
+  <div id="modal-settings" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>⚙️ Gelişmiş Bot & Sistem Yapılandırması</span>
+          <span id="modal-cfg-file-badge" class="badge badge-mode" style="font-size: 11px;">config.test.yaml</span>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeSettingsModal()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Settings Tabs Navigation -->
+        <div class="settings-tabs">
+          <button type="button" class="tab-btn active" data-tab="tab-trading">📊 Al-Sat & Radar</button>
+          <button type="button" class="tab-btn" data-tab="tab-strategy">🛡️ Risk & Strateji</button>
+          <button type="button" class="tab-btn" data-tab="tab-test">⏱️ Test & Süre</button>
+          <button type="button" class="tab-btn" data-tab="tab-api">🔑 Binance TR API</button>
+          <button type="button" class="tab-btn" data-tab="tab-auth">🔒 Güvenlik & Sunucu</button>
+          <button type="button" class="tab-btn" data-tab="tab-profiles">📁 Profil / Dosya</button>
+        </div>
+
+        <!-- Tab 1: Trading & Radar -->
+        <div id="tab-trading" class="tab-pane active">
+          <div class="section-box">
+            <div class="section-header">🤖 Bot Modu & Parite Seçimi</div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-trading-mode">Çalışma Modu</label>
+                <select id="cfg-trading-mode">
+                  <option value="simulation">🧪 Sanal Para (Paper Trading / Simülasyon)</option>
+                  <option value="live">🔥 Gerçek Hesap (Canlı Binance TR Al-Sat)</option>
+                </select>
+                <div class="form-help">Canlı modda gerçek bakiye ile Binance TR üzerinde işlem yapılır.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-symbol">İşlem Paritesi</label>
+                <input type="text" id="cfg-trading-symbol" value="AUTO" placeholder="AUTO veya BTC_TRY">
+                <div class="form-help">AUTO: En hareketli coinleri radardan otomatik seçer.</div>
+              </div>
+            </div>
+
+            <div class="toggle-switch-card">
+              <div>
+                <div class="toggle-switch-label">Otomatik Coin Seçimi (Radar Aktif)</div>
+                <div class="form-help">Piyasadaki en yüksek ivmeli coinleri dinamik tarayıp sepet oluşturur.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-trading-auto-select-coin">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">💰 Bütçe & Portföy Sepeti</div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-trading-budget-per-trade">İşlem Başına Bütçe (TL)</label>
+                <input type="number" id="cfg-trading-budget-per-trade" step="10" min="10">
+                <div class="form-help">Her bir coine ayrılacak emir tutarı.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-target-coins-count">Hedef Coin Sayısı (Sepet)</label>
+                <input type="number" id="cfg-trading-target-coins-count" min="1" max="20">
+                <div class="form-help">Portföyde tutulacak farklı coin adedi.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-max-open-positions">Maksimum Açık Pozisyon</label>
+                <input type="number" id="cfg-trading-max-open-positions" min="1" max="20">
+                <div class="form-help">Aynı anda açık olabilecek azami işlem.</div>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-trading-initial-virtual-balance">Sanal Başlangıç Bakiyesi (TL)</label>
+                <input type="number" id="cfg-trading-initial-virtual-balance" step="500">
+                <div class="form-help">Simülasyon modu referans bakiyesi.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-fee-rate-pct">Komisyon Oranı (%)</label>
+                <input type="number" id="cfg-trading-fee-rate-pct" step="0.01">
+                <div class="form-help">Binance TR işlem komisyonu (Genelde %0.10).</div>
+              </div>
+            </div>
+
+            <div class="toggle-switch-card">
+              <div>
+                <div class="toggle-switch-label">Sepeti Hızlı Doldur (Auto Fill Portfolio)</div>
+                <div class="form-help">Boş yuvalara anında radar adaylarını yerleştirir.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-trading-auto-fill-portfolio">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">🔍 Piyasa Radarı & Filtre Parametreleri</div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-trading-top-coins-limit">Tarama Havuzu Limiti</label>
+                <input type="number" id="cfg-trading-top-coins-limit" min="0" max="100">
+                <div class="form-help">0 = Tüm TRY çiftlerini tara.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-min-24h-volume-try">Min 24s Hacim (TL)</label>
+                <input type="number" id="cfg-trading-min-24h-volume-try" step="500000">
+                <div class="form-help">Sığ ve likiditesi düşük tahtaları eler.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-min-coin-price">Min Coin Fiyatı (TL)</label>
+                <input type="number" id="cfg-trading-min-coin-price" step="0.01">
+                <div class="form-help">Kuruş altı aşırı spreadli coinleri engeller.</div>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-trading-obs-seconds">Aday Gözlem Süresi (sn)</label>
+                <input type="number" id="cfg-trading-obs-seconds" min="0" max="300">
+                <div class="form-help">Almadan önce ivme teyidi izleme süresi.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-min-obs-gain">Gözlemde Min İvme (%)</label>
+                <input type="number" id="cfg-trading-min-obs-gain" step="0.05">
+                <div class="form-help">Gözlem penceresinde gereken min getiri.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-burst-count">Min Patlama / İvme Sayısı</label>
+                <input type="number" id="cfg-trading-burst-count" min="1" max="5">
+                <div class="form-help">Gözlemde gereken yukarı yönlü dalga sayısı.</div>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-trading-prebuy-seconds">Mikro Düşüş Ön İzleme (sn)</label>
+                <input type="number" id="cfg-trading-prebuy-seconds" min="0" max="60">
+                <div class="form-help">Alımdan hemen önce pullback kontrol süresi.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-timeout-cooldown">Aday Timeout Dinlenme (sn)</label>
+                <input type="number" id="cfg-trading-timeout-cooldown" min="0" max="300">
+                <div class="form-help">İvme yakalayamayan coinin dinlenme cezası.</div>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="toggle-switch-card">
+                <div>
+                  <div class="toggle-switch-label">📈 Sadece Yükseliş Trendi (Only Uptrend)</div>
+                  <div class="form-help">Pozitif momentumlu coinleri seçer.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="cfg-trading-only-uptrend">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-switch-card">
+                <div>
+                  <div class="toggle-switch-label">🛡️ Düşen Bıçakları Ele (Filter Falling)</div>
+                  <div class="form-help">Sürekli tepe aşağı düşenleri engeller.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="cfg-trading-filter-falling-coins">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="toggle-switch-card">
+                <div>
+                  <div class="toggle-switch-label">Komisyon Çalkantısını Önle (Prevent Churn)</div>
+                  <div class="form-help">Aynı coine gereksiz hızlı al-satı engeller.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="cfg-trading-prevent-rebuy-churn">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-switch-card">
+                <div>
+                  <div class="toggle-switch-label">Strateji Teyidi Zorunlu (Strict Buy)</div>
+                  <div class="form-help">Strateji onayı olmadan acele alımı engeller.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="cfg-trading-require-strict-buy">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-trading-spread-guard">Max Makas / Spread Eşiği (%)</label>
+                <input type="number" id="cfg-trading-spread-guard" step="0.05">
+                <div class="form-help">Alış-satış makası yüksek tahtaları eler.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-btc-dump-pct">BTC Dump Shield Eşiği (%)</label>
+                <input type="number" id="cfg-trading-btc-dump-pct" step="0.05">
+                <div class="form-help">BTC ani düşüşünde alımları dondurur.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-trading-btc-dump-cooldown">BTC Dondurma Süresi (sn)</label>
+                <input type="number" id="cfg-trading-btc-dump-cooldown" step="10">
+                <div class="form-help">Dump sonrası piyasanın durulma beklemesi.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Strategy & Risk Management -->
+        <div id="tab-strategy" class="tab-pane">
+          <div class="section-box">
+            <div class="section-header">🎯 Aktif Algoritmik Strateji</div>
+            <div class="form-group">
+              <label for="cfg-strategy-active">Strateji Motoru</label>
+              <select id="cfg-strategy-active">
+                <option value="adaptive_regime">🧠 Hibrit Piyasa Rejimi & Quant Momentum (Trend / Pullback / Savunma - Önerilen)</option>
+                <option value="fee_recovery">🎯 Komisyon Kurtaran Strateji (Binance TR Komisyon Tabanlı)</option>
+                <option value="momentum_ema">📈 Momentum EMA Kesişimi (Trend Takibi)</option>
+                <option value="rsi_bollinger">📊 RSI + Bollinger Scalper (Dip Al / Tepe Sat)</option>
+                <option value="quick_test_scalper">⚡ Hızlı Test Scalper (15-20 Dk Hızlı Test)</option>
+                <option value="grid_scalper">🧱 Grid Micro Scalper (Geri Çekilme)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">🛡️ Kâr Al, Zarar Kes & İz Süren Stop</div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-strategy-tp">Tam Kâr Al (TP %)</label>
+                <input type="number" id="cfg-strategy-tp" step="0.1">
+                <div class="form-help">Hedef net kâr alma eşiği.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-sl">Zarar Kes (SL %)</label>
+                <input type="number" id="cfg-strategy-sl" step="0.1">
+                <div class="form-help">Maksimum kabul edilebilir zarar.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-portfolio-sl">Portföy Toplam SL (%)</label>
+                <input type="number" id="cfg-strategy-portfolio-sl" step="0.1">
+                <div class="form-help">Tüm hesap için genel acil stop.</div>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-strategy-trailing-pct">İz Süren Stop Mesafesi (%)</label>
+                <input type="number" id="cfg-strategy-trailing-pct" step="0.05">
+                <div class="form-help">Zirveden geri çekilme toleransı.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-trailing-act">Trailing Aktivasyon Kârı (%)</label>
+                <input type="number" id="cfg-strategy-trailing-act" step="0.05">
+                <div class="form-help">İz süren stopun başlayacağı min kâr.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-breakeven">Breakeven Kilit Eşiği (%)</label>
+                <input type="number" id="cfg-strategy-breakeven" step="0.05">
+                <div class="form-help">Stopun maliyete kilitleneceği kâr eşiği.</div>
+              </div>
+            </div>
+
+            <div class="toggle-switch-card">
+              <div>
+                <div class="toggle-switch-label">Kademeli Kâr Al (Partial Take-Profit)</div>
+                <div class="form-help">Pozisyonun bir kısmını erken kârda satıp riski sıfırlar.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-strategy-enable-partial-tp">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-strategy-partial-tp-pct">1. Kademe Kâr Eşiği (TP1 %)</label>
+                <input type="number" id="cfg-strategy-partial-tp-pct" step="0.05">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-partial-tp-ratio">1. Kademede Satış Oranı (Örn: 0.50 = %50)</label>
+                <input type="number" id="cfg-strategy-partial-tp-ratio" step="0.05" min="0.1" max="1.0">
+              </div>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">⏳ Zaman Aşımı & Bekleme (Cooldown) Süreleri</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+              <div class="form-group">
+                <label for="cfg-strategy-max-holding">Durgunluk Tahliyesi (sn)</label>
+                <input type="number" id="cfg-strategy-max-holding" step="30">
+                <div class="form-help">Hareketsiz kalan pozisyon süresi.</div>
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-cooldown">Alımlar Arası Bekleme (sn)</label>
+                <input type="number" id="cfg-strategy-cooldown" step="1">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-symbol-cooldown">Aynı Coine Tekrar Giriş (sn)</label>
+                <input type="number" id="cfg-strategy-symbol-cooldown" step="10">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-loss-cooldown">Zarar Kesilen Coine Ceza (sn)</label>
+                <input type="number" id="cfg-strategy-loss-cooldown" step="30">
+              </div>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">📈 Teknik İndikatör Ayarları</div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="cfg-strategy-rsi-period">RSI Periyodu</label>
+                <input type="number" id="cfg-strategy-rsi-period" min="2" max="50">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-rsi-oversold">RSI Aşırı Satım (Dip Eşiği)</label>
+                <input type="number" id="cfg-strategy-rsi-oversold" step="1">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-rsi-overbought">RSI Aşırı Alım (Tepe Eşiği)</label>
+                <input type="number" id="cfg-strategy-rsi-overbought" step="1">
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-strategy-bb-period">Bollinger Band Periyodu</label>
+                <input type="number" id="cfg-strategy-bb-period" min="5" max="100">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-bb-std">Bollinger Standart Sapma Çarpanı</label>
+                <input type="number" id="cfg-strategy-bb-std" step="0.1">
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-strategy-ema-fast">Hızlı EMA Periyodu</label>
+                <input type="number" id="cfg-strategy-ema-fast" min="2" max="50">
+              </div>
+              <div class="form-group">
+                <label for="cfg-strategy-ema-slow">Yavaş EMA Periyodu</label>
+                <input type="number" id="cfg-strategy-ema-slow" min="5" max="200">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Test & Session Settings -->
+        <div id="tab-test" class="tab-pane">
+          <div class="section-box">
+            <div class="section-header">⏱️ Test ve Oturum Süreleri</div>
+            <div class="form-group">
+              <label for="cfg-test-duration">Oturum / Test Süresi (Dakika)</label>
+              <input type="number" id="cfg-test-duration" min="1" max="1440">
+              <div class="form-help">Belirtilen süre dolduğunda oturum tamamlanır ve performans raporu üretilir.</div>
+            </div>
+
+            <div class="toggle-switch-card">
+              <div>
+                <div class="toggle-switch-label">Süre Bitince Otomatik Durdur (Auto Stop)</div>
+                <div class="form-help">Süre bitiminde botu güvenle durdurur ve rapor dosyasını kaydeder.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-test-auto-stop">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Binance TR API Connection -->
+        <div id="tab-api" class="tab-pane">
+          <div class="section-box">
+            <div class="section-header">🔑 Binance TR API Kimlik Bilgileri</div>
+            <div class="form-group">
+              <label for="cfg-api-key">API Key</label>
+              <input type="text" id="cfg-api-key" placeholder="Binance TR API Key">
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-api-secret">Secret Key</label>
+              <input type="password" id="cfg-api-secret" placeholder="••••••••••••••••••••••••••••••••">
+              <div class="form-help">Mevcut Secret Key gizlidir. Değiştirmek istemiyorsanız boş veya •••• bırakınız.</div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-api-base-url">REST API Base URL</label>
+                <input type="text" id="cfg-api-base-url" value="https://www.binance.tr">
+              </div>
+              <div class="form-group">
+                <label for="cfg-api-ws-url">WebSocket URL</label>
+                <input type="text" id="cfg-api-ws-url" value="wss://stream-cloud.binance.tr/ws">
+              </div>
+            </div>
+
+            <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="btn-test-api" class="btn btn-secondary" style="font-size: 13px; padding: 8px 16px;">
+                ⚡ Binance TR Bağlantısını Test Et
+              </button>
+              <span id="api-test-result" style="font-size: 12px;"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 5: Auth & Server -->
+        <div id="tab-auth" class="tab-pane">
+          <div class="section-box">
+            <div class="section-header">🔒 Web Panel Giriş Güvenliği</div>
+            <div class="toggle-switch-card">
+              <div>
+                <div class="toggle-switch-label">Panel Giriş Şifresi Koruması</div>
+                <div class="form-help">Aktifken panele erişmek için kullanıcı adı ve şifre istenir.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-auth-enabled">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-auth-username">Yönetici Kullanıcı Adı</label>
+                <input type="text" id="cfg-auth-username" value="admin">
+              </div>
+              <div class="form-group">
+                <label for="cfg-auth-password">Yeni Parola (Değiştirmek için)</label>
+                <input type="password" id="cfg-auth-password" placeholder="••••••••">
+                <div class="form-help">Değiştirmek istemiyorsanız boş bırakınız.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-box">
+            <div class="section-header">🌐 Web Sunucu Ağ Ayarları</div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="cfg-server-host">Sunucu Dinleme Host IP</label>
+                <input type="text" id="cfg-server-host" value="127.0.0.1">
+              </div>
+              <div class="form-group">
+                <label for="cfg-server-port">Sunucu Portu</label>
+                <input type="number" id="cfg-server-port" value="8000">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 6: Profiles & File Management -->
+        <div id="tab-profiles" class="tab-pane">
+          <div class="section-box">
+            <div class="section-header">📁 Profil ve Dosya Seçimi</div>
+            <div class="form-group">
+              <label>Aktif Yapılandırma Dosyası</label>
+              <div id="cfg-loaded-file-display" style="padding: 10px 14px; background: rgba(0,0,0,0.4); border-radius: 8px; border: 1px solid var(--card-border); font-family: monospace; color: var(--accent);">
+                config.test.yaml
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary" onclick="switchBotMode('simulation')">
+                🧪 Test Profilini Yükle (config.test.yaml)
+              </button>
+              <button type="button" class="btn btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;" onclick="switchBotMode('live')">
+                🔥 Canlı Borsa Profilini Yükle (config.live.yaml)
+              </button>
+              <button type="button" class="btn btn-danger" onclick="resetConfigToDefaults()">
+                🔄 Varsayılan Şablona Sıfırla
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="loadFullConfigModal()">
+          🔄 Formu Yenile
+        </button>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()">
+            İptal
+          </button>
+          <button type="button" id="btn-save-full-config" class="btn btn-primary">
+            💾 Tüm Ayarları Kaydet & Uygula
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="/static/js/dashboard.js"></script>
 </body>

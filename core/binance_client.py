@@ -68,6 +68,16 @@ class BinanceTrClient:
 
     # ==================== PUBLIC ENDPOINTS ====================
 
+    def ping(self) -> bool:
+        """
+        Binance TR sunucu erişilebilirliğini kontrol eder.
+        """
+        try:
+            res = self._request("GET", "/open/v1/common/time")
+            return res.get("code") == 0 or "timestamp" in res
+        except Exception:
+            return False
+
     def get_server_time(self) -> int:
         res = self._request("GET", "/open/v1/common/time")
         if res.get("code") == 0:
@@ -163,6 +173,12 @@ class BinanceTrClient:
         Spot hesap bakiyeleri ve detayları.
         """
         return self._request("GET", "/open/v1/account/spot", signed=True)
+
+    def get_account_info(self) -> Dict[str, Any]:
+        """
+        Spot hesap bilgisi için takma ad.
+        """
+        return self.get_account_spot()
 
     def get_asset(self, asset: str) -> Dict[str, Any]:
         """

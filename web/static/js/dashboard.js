@@ -1,6 +1,25 @@
 let isRunning = false;
 let pollingInterval = null;
 let isFetchingState = false;
+let isModalOpen = false;
+
+// Toast Bildirim Sistemi
+function showToast(message, type = "success") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  let icon = "✅";
+  if (type === "error") icon = "❌";
+  else if (type === "info") icon = "ℹ️";
+  toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(10px)";
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
 
 async function fetchState() {
   if (isFetchingState) return;
@@ -137,6 +156,7 @@ function updateUI(data) {
     }).join("");
   }
 
+  // Quick inputs sync
   const obsInput = document.getElementById("input-obs-seconds");
   if (obsInput && data.config && data.config.candidate_observation_seconds !== undefined && document.activeElement !== obsInput) {
     obsInput.value = data.config.candidate_observation_seconds;
@@ -150,6 +170,26 @@ function updateUI(data) {
   const onlyUptrendCheck = document.getElementById("check-only-uptrend");
   if (onlyUptrendCheck && data.config && data.config.only_uptrend !== undefined && document.activeElement !== onlyUptrendCheck) {
     onlyUptrendCheck.checked = data.config.only_uptrend;
+  }
+
+  const tpInput = document.getElementById("input-tp");
+  if (tpInput && data.config && data.config.take_profit_pct !== undefined && document.activeElement !== tpInput) {
+    tpInput.value = data.config.take_profit_pct;
+  }
+
+  const slInput = document.getElementById("input-sl");
+  if (slInput && data.config && data.config.stop_loss_pct !== undefined && document.activeElement !== slInput) {
+    slInput.value = data.config.stop_loss_pct;
+  }
+
+  const trailingInput = document.getElementById("input-trailing");
+  if (trailingInput && data.config && data.config.trailing_stop_pct !== undefined && document.activeElement !== trailingInput) {
+    trailingInput.value = data.config.trailing_stop_pct;
+  }
+
+  const stratSelect = document.getElementById("select-strategy");
+  if (stratSelect && data.strategy && document.activeElement !== stratSelect) {
+    stratSelect.value = data.strategy;
   }
 
   // Otomatik Coin Seçimi Durumu
@@ -205,7 +245,7 @@ function updateUI(data) {
     }
   }
 
-  // Mod Rozeti ve Başlığı (Canlı vs Sanal)
+  // Mod Rozeti ve Başlığı
   const modeBadge = document.getElementById("badge-mode");
   const equityTitle = document.getElementById("lbl-equity-title");
   if (isLive) {
@@ -255,7 +295,7 @@ function updateUI(data) {
   const openCount = openPositions.length;
   const basketBadge = document.getElementById("badge-basket-status");
   if (basketBadge) {
-    basketBadge.innerText = `${openCount} / ${targetCoins} Coin Dolu (Sürekli Rotasyon)`;
+    basketBadge.innerText = `${openCount} / ${targetCoins} Coin Dolu`;
     if (openCount >= targetCoins) {
       basketBadge.style.background = "rgba(16, 185, 129, 0.15)";
       basketBadge.style.color = "var(--success)";
@@ -304,7 +344,7 @@ function updateUI(data) {
     }).join("");
   }
 
-  // Tamamlanan İşlemler (Son işlem en üstte - Ters kronolojik)
+  // Tamamlanan İşlemler
   const tradesTable = document.getElementById("trades-body");
   const closedTrades = (p.closed_trades || []).slice().reverse();
   if (closedTrades.length === 0) {
@@ -383,7 +423,7 @@ async function startBot() {
   const targetCoinsInput = document.getElementById("input-target-coins");
   const targetCoins = targetCoinsInput ? parseInt(targetCoinsInput.value) : 5;
   const obsInput = document.getElementById("input-obs-seconds");
-  const obsSec = obsInput ? parseInt(obsInput.value) : 45;
+  const obsSec = obsInput ? parseInt(obsInput.value) : 15;
   const trailingActInput = document.getElementById("input-trailing-act");
   const onlyUptrendCheck = document.getElementById("check-only-uptrend");
 
@@ -407,10 +447,13 @@ async function startBot() {
       })
     });
     if (res.ok) {
+      showToast("Bot başarıyla başlatıldı!", "success");
       await fetchState();
+    } else {
+      showToast("Bot başlatılamadı!", "error");
     }
   } catch (e) {
-    alert("Bot başlatılamadı: " + e);
+    showToast("Bot başlatılamadı: " + e, "error");
   } finally {
     isActionPending = false;
     await fetchState();
@@ -445,11 +488,12 @@ async function stopBot() {
   try {
     const res = await fetch("/api/stop", { method: "POST" });
     if (res.ok) {
+      showToast("Bot durduruldu ve rapor oluşturuldu.", "info");
       await fetchState();
       loadReportsList();
     }
   } catch (e) {
-    alert("Durdurma hatası: " + e);
+    showToast("Durdurma hatası: " + e, "error");
   } finally {
     isActionPending = false;
     await fetchState();
@@ -488,7 +532,7 @@ async function saveConfigParams() {
     symbol: symVal,
     auto_select_coin: isAuto,
     target_coins_count: targetCoinsInput ? parseInt(targetCoinsInput.value) : 5,
-    candidate_observation_seconds: obsInput && obsInput.value !== "" ? parseInt(obsInput.value) : 45,
+    candidate_observation_seconds: obsInput && obsInput.value !== "" ? parseInt(obsInput.value) : 15,
     only_uptrend: onlyUptrendCheck ? onlyUptrendCheck.checked : true,
   };
 
@@ -499,10 +543,10 @@ async function saveConfigParams() {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
-      console.log("Parametreler güncellendi");
+      showToast("Hızlı parametreler güncellendi", "success");
     }
   } catch (e) {
-    console.error("Parametre kaydetme hatası: " + e);
+    showToast("Parametre kaydetme hatası: " + e, "error");
   }
 }
 
@@ -528,7 +572,6 @@ async function loadReportsList() {
   }
 }
 
-
 async function closePosition(positionId, symbol) {
   const isLive = currentMode === "live";
   const promptText = isLive 
@@ -544,12 +587,13 @@ async function closePosition(positionId, symbol) {
     });
     const data = await res.json();
     if (res.ok) {
+      showToast(`${symbol} pozisyonu satıldı.`, "success");
       fetchState();
     } else {
-      alert("Pozisyon kapatılamadı: " + (data.message || "Bilinmeyen hata"));
+      showToast("Pozisyon kapatılamadı: " + (data.message || "Hata"), "error");
     }
   } catch (err) {
-    alert("Bağlantı hatası: " + err);
+    showToast("Bağlantı hatası: " + err, "error");
   }
 }
 
@@ -564,12 +608,376 @@ async function closeAllPositions() {
     const res = await fetch("/api/close_all", { method: "POST" });
     const data = await res.json();
     if (res.ok) {
+      showToast(`Tüm pozisyonlar (${data.closed_count} adet) kapatıldı.`, "info");
       fetchState();
     } else {
-      alert("Pozisyonlar kapatılamadı: " + (data.message || "Bilinmeyen hata"));
+      showToast("Pozisyonlar kapatılamadı: " + (data.message || "Hata"), "error");
     }
   } catch (err) {
-    alert("Bağlantı hatası: " + err);
+    showToast("Bağlantı hatası: " + err, "error");
+  }
+}
+
+// ==========================================
+// GELİŞMİŞ AYARLAR MODAL VE YÖNETİM SİSTEMİ
+// ==========================================
+
+function openSettingsModal() {
+  const modal = document.getElementById("modal-settings");
+  if (modal) {
+    modal.classList.add("show");
+    isModalOpen = true;
+    loadFullConfigModal();
+  }
+}
+
+function closeSettingsModal() {
+  const modal = document.getElementById("modal-settings");
+  if (modal) {
+    modal.classList.remove("show");
+    isModalOpen = false;
+  }
+}
+
+async function loadFullConfigModal() {
+  try {
+    const res = await fetch("/api/config/full");
+    if (!res.ok) {
+      showToast("Ayarlar sunucudan alınamadı", "error");
+      return;
+    }
+    const data = await res.json();
+    const cfg = data.config || {};
+    const t = cfg.trading || {};
+    const s = cfg.strategy || {};
+    const test = cfg.test || {};
+    const api = cfg.api || {};
+    const auth = cfg.auth || {};
+    const server = cfg.server || {};
+
+    // Modal Rozeti & Dosya Yolu
+    const fileBadge = document.getElementById("modal-cfg-file-badge");
+    const fileDisplay = document.getElementById("cfg-loaded-file-display");
+    const loadedPath = data.loaded_config_path || "config.test.yaml";
+    if (fileBadge) fileBadge.innerText = loadedPath.replace(/^.*[\\\/]/, '');
+    if (fileDisplay) fileDisplay.innerText = loadedPath;
+
+    // Trading Fields
+    setVal("cfg-trading-mode", t.mode || "simulation");
+    setVal("cfg-trading-symbol", t.symbol || "AUTO");
+    setChecked("cfg-trading-auto-select-coin", t.auto_select_coin !== false);
+    setVal("cfg-trading-budget-per-trade", t.budget_per_trade || 50);
+    setVal("cfg-trading-target-coins-count", t.target_coins_count || 5);
+    setVal("cfg-trading-max-open-positions", t.max_open_positions || 5);
+    setVal("cfg-trading-initial-virtual-balance", t.initial_virtual_balance || 10000);
+    setVal("cfg-trading-fee-rate-pct", t.fee_rate_pct !== undefined ? t.fee_rate_pct : 0.1);
+    setChecked("cfg-trading-auto-fill-portfolio", t.auto_fill_portfolio === true);
+    setVal("cfg-trading-top-coins-limit", t.top_coins_limit !== undefined ? t.top_coins_limit : 0);
+    setVal("cfg-trading-min-24h-volume-try", t.min_24h_volume_try || 8000000);
+    setVal("cfg-trading-min-coin-price", t.min_coin_price !== undefined ? t.min_coin_price : 0.05);
+    setVal("cfg-trading-obs-seconds", t.candidate_observation_seconds !== undefined ? t.candidate_observation_seconds : 15);
+    setVal("cfg-trading-min-obs-gain", t.min_observation_gain_pct !== undefined ? t.min_observation_gain_pct : 0.50);
+    setVal("cfg-trading-burst-count", t.candidate_min_burst_count || 1);
+    setVal("cfg-trading-prebuy-seconds", t.candidate_prebuy_seconds !== undefined ? t.candidate_prebuy_seconds : 10);
+    setVal("cfg-trading-timeout-cooldown", t.candidate_timeout_cooldown_seconds || 10);
+    setChecked("cfg-trading-only-uptrend", t.only_uptrend !== false);
+    setChecked("cfg-trading-filter-falling-coins", t.filter_falling_coins !== false);
+    setChecked("cfg-trading-prevent-rebuy-churn", t.prevent_rebuy_churn === true);
+    setChecked("cfg-trading-require-strict-buy", t.require_strict_buy_signal !== false);
+    setVal("cfg-trading-spread-guard", t.max_allowed_spread_pct !== undefined ? t.max_allowed_spread_pct : 0.20);
+    setVal("cfg-trading-btc-dump-pct", t.btc_dump_shield_pct !== undefined ? t.btc_dump_shield_pct : 0.35);
+    setVal("cfg-trading-btc-dump-cooldown", t.btc_dump_cooldown_seconds || 120);
+
+    // Strategy Fields
+    setVal("cfg-strategy-active", s.active || "adaptive_regime");
+    setVal("cfg-strategy-tp", s.take_profit_pct || 1.20);
+    setVal("cfg-strategy-sl", s.stop_loss_pct || 0.85);
+    setVal("cfg-strategy-portfolio-sl", s.portfolio_stop_loss_pct || 2.5);
+    setVal("cfg-strategy-trailing-pct", s.trailing_stop_pct || 0.20);
+    setVal("cfg-strategy-trailing-act", s.trailing_activation_pct || 0.50);
+    setVal("cfg-strategy-breakeven", s.breakeven_trigger_pct || 0.35);
+    setChecked("cfg-strategy-enable-partial-tp", s.enable_partial_tp !== false);
+    setVal("cfg-strategy-partial-tp-pct", s.partial_tp_pct || 0.60);
+    setVal("cfg-strategy-partial-tp-ratio", s.partial_tp_ratio || 0.50);
+    setVal("cfg-strategy-max-holding", s.max_holding_seconds || 300);
+    setVal("cfg-strategy-cooldown", s.cooldown_seconds || 5);
+    setVal("cfg-strategy-symbol-cooldown", s.symbol_cooldown_seconds || 30);
+    setVal("cfg-strategy-loss-cooldown", s.loss_cooldown_seconds || 180);
+    setVal("cfg-strategy-rsi-period", s.rsi_period || 14);
+    setVal("cfg-strategy-rsi-oversold", s.rsi_oversold || 42.0);
+    setVal("cfg-strategy-rsi-overbought", s.rsi_overbought || 65.0);
+    setVal("cfg-strategy-bb-period", s.bollinger_period || 20);
+    setVal("cfg-strategy-bb-std", s.bollinger_std_dev || 2.0);
+    setVal("cfg-strategy-ema-fast", s.ema_fast || 9);
+    setVal("cfg-strategy-ema-slow", s.ema_slow || 21);
+
+    // Test Fields
+    setVal("cfg-test-duration", test.duration_minutes || 15);
+    setChecked("cfg-test-auto-stop", test.auto_stop !== false);
+
+    // API Fields
+    setVal("cfg-api-key", api.api_key || "");
+    const secInput = document.getElementById("cfg-api-secret");
+    if (secInput) {
+      secInput.value = "";
+      secInput.placeholder = api.has_secret_key ? "•••••••• (Kayıtlı - Değiştirmek için yazın)" : "Secret Key giriniz";
+    }
+    setVal("cfg-api-base-url", api.base_url || "https://www.binance.tr");
+    setVal("cfg-api-ws-url", api.ws_url || "wss://stream-cloud.binance.tr/ws");
+
+    // Auth & Server Fields
+    setChecked("cfg-auth-enabled", auth.enabled !== false);
+    setVal("cfg-auth-username", auth.username || "admin");
+    const passInput = document.getElementById("cfg-auth-password");
+    if (passInput) {
+      passInput.value = "";
+      passInput.placeholder = auth.has_password ? "•••••••• (Kayıtlı - Değiştirmek için yazın)" : "Yeni Parola";
+    }
+    setVal("cfg-server-host", server.host || "127.0.0.1");
+    setVal("cfg-server-port", server.port || 8000);
+
+  } catch (err) {
+    showToast("Yapılandırma yüklenemedi: " + err, "error");
+  }
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+
+function getNumVal(id, def = 0) {
+  const el = document.getElementById(id);
+  if (!el || el.value === "") return def;
+  const num = parseFloat(el.value);
+  return isNaN(num) ? def : num;
+}
+
+function getIntVal(id, def = 0) {
+  const el = document.getElementById(id);
+  if (!el || el.value === "") return def;
+  const num = parseInt(el.value, 10);
+  return isNaN(num) ? def : num;
+}
+
+function getStrVal(id, def = "") {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : def;
+}
+
+function setChecked(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.checked = Boolean(val);
+}
+
+function getChecked(id) {
+  const el = document.getElementById(id);
+  return el ? el.checked : false;
+}
+
+async function saveFullConfigModal() {
+  const btnSave = document.getElementById("btn-save-full-config");
+  if (btnSave) {
+    btnSave.disabled = true;
+    btnSave.innerHTML = "⏳ Kaydediliyor...";
+  }
+
+  const payload = {
+    trading: {
+      mode: getStrVal("cfg-trading-mode", "simulation"),
+      symbol: getStrVal("cfg-trading-symbol", "AUTO"),
+      auto_select_coin: getChecked("cfg-trading-auto-select-coin"),
+      budget_per_trade: getNumVal("cfg-trading-budget-per-trade", 50),
+      target_coins_count: getIntVal("cfg-trading-target-coins-count", 5),
+      max_open_positions: getIntVal("cfg-trading-max-open-positions", 5),
+      initial_virtual_balance: getNumVal("cfg-trading-initial-virtual-balance", 10000),
+      fee_rate_pct: getNumVal("cfg-trading-fee-rate-pct", 0.1),
+      auto_fill_portfolio: getChecked("cfg-trading-auto-fill-portfolio"),
+      top_coins_limit: getIntVal("cfg-trading-top-coins-limit", 0),
+      min_24h_volume_try: getNumVal("cfg-trading-min-24h-volume-try", 8000000),
+      min_coin_price: getNumVal("cfg-trading-min-coin-price", 0.05),
+      candidate_observation_seconds: getIntVal("cfg-trading-obs-seconds", 15),
+      min_observation_gain_pct: getNumVal("cfg-trading-min-obs-gain", 0.50),
+      candidate_min_burst_count: getIntVal("cfg-trading-burst-count", 1),
+      candidate_prebuy_seconds: getIntVal("cfg-trading-prebuy-seconds", 10),
+      candidate_timeout_cooldown_seconds: getIntVal("cfg-trading-timeout-cooldown", 10),
+      only_uptrend: getChecked("cfg-trading-only-uptrend"),
+      filter_falling_coins: getChecked("cfg-trading-filter-falling-coins"),
+      prevent_rebuy_churn: getChecked("cfg-trading-prevent-rebuy-churn"),
+      require_strict_buy_signal: getChecked("cfg-trading-require-strict-buy"),
+      max_allowed_spread_pct: getNumVal("cfg-trading-spread-guard", 0.20),
+      btc_dump_shield_pct: getNumVal("cfg-trading-btc-dump-pct", 0.35),
+      btc_dump_cooldown_seconds: getIntVal("cfg-trading-btc-dump-cooldown", 120),
+    },
+    strategy: {
+      active: getStrVal("cfg-strategy-active", "adaptive_regime"),
+      take_profit_pct: getNumVal("cfg-strategy-tp", 1.20),
+      stop_loss_pct: getNumVal("cfg-strategy-sl", 0.85),
+      portfolio_stop_loss_pct: getNumVal("cfg-strategy-portfolio-sl", 2.5),
+      trailing_stop_pct: getNumVal("cfg-strategy-trailing-pct", 0.20),
+      trailing_activation_pct: getNumVal("cfg-strategy-trailing-act", 0.50),
+      breakeven_trigger_pct: getNumVal("cfg-strategy-breakeven", 0.35),
+      enable_partial_tp: getChecked("cfg-strategy-enable-partial-tp"),
+      partial_tp_pct: getNumVal("cfg-strategy-partial-tp-pct", 0.60),
+      partial_tp_ratio: getNumVal("cfg-strategy-partial-tp-ratio", 0.50),
+      max_holding_seconds: getIntVal("cfg-strategy-max-holding", 300),
+      cooldown_seconds: getIntVal("cfg-strategy-cooldown", 5),
+      symbol_cooldown_seconds: getIntVal("cfg-strategy-symbol-cooldown", 30),
+      loss_cooldown_seconds: getIntVal("cfg-strategy-loss-cooldown", 180),
+      rsi_period: getIntVal("cfg-strategy-rsi-period", 14),
+      rsi_oversold: getNumVal("cfg-strategy-rsi-oversold", 42.0),
+      rsi_overbought: getNumVal("cfg-strategy-rsi-overbought", 65.0),
+      bollinger_period: getIntVal("cfg-strategy-bb-period", 20),
+      bollinger_std_dev: getNumVal("cfg-strategy-bb-std", 2.0),
+      ema_fast: getIntVal("cfg-strategy-ema-fast", 9),
+      ema_slow: getIntVal("cfg-strategy-ema-slow", 21),
+    },
+    test: {
+      duration_minutes: getIntVal("cfg-test-duration", 15),
+      auto_stop: getChecked("cfg-test-auto-stop"),
+    },
+    api: {
+      api_key: getStrVal("cfg-api-key"),
+      base_url: getStrVal("cfg-api-base-url", "https://www.binance.tr"),
+      ws_url: getStrVal("cfg-api-ws-url", "wss://stream-cloud.binance.tr/ws"),
+    },
+    auth: {
+      enabled: getChecked("cfg-auth-enabled"),
+      username: getStrVal("cfg-auth-username", "admin"),
+    },
+    server: {
+      host: getStrVal("cfg-server-host", "127.0.0.1"),
+      port: getIntVal("cfg-server-port", 8000),
+    }
+  };
+
+  const secretVal = getStrVal("cfg-api-secret");
+  if (secretVal && secretVal !== "••••••••" && !secretVal.includes("•••")) {
+    payload.api.secret_key = secretVal;
+  }
+
+  const passVal = getStrVal("cfg-auth-password");
+  if (passVal && passVal !== "••••••••" && !passVal.includes("•••")) {
+    payload.auth.password = passVal;
+  }
+
+  try {
+    const res = await fetch("/api/config/full", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    if (res.ok) {
+      showToast(result.message || "Tüm ayarlar kaydedildi ve bota uygulandı!", "success");
+      closeSettingsModal();
+      await fetchState();
+    } else {
+      showToast("Ayarlar kaydedilemedi: " + (result.message || "Hata"), "error");
+    }
+  } catch (err) {
+    showToast("Bağlantı hatası: " + err, "error");
+  } finally {
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.innerHTML = "💾 Tüm Ayarları Kaydet & Uygula";
+    }
+  }
+}
+
+async function switchBotMode(mode) {
+  if (isRunning) {
+    alert("Mod değiştirmeden önce lütfen çalışan botu durdurunuz.");
+    return;
+  }
+  const modeName = mode === "live" ? "CANLI BORSA (Gerçek Hesap)" : "SANAL PARA (Simülasyon)";
+  if (!confirm(`Bot modunu '${modeName}' olarak değiştirmek istiyor musunuz?`)) return;
+
+  try {
+    const res = await fetch("/api/config/switch_mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: mode }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Mod '${modeName}' olarak değiştirildi!`, "success");
+      loadFullConfigModal();
+      fetchState();
+    } else {
+      showToast("Mod değiştirilemedi: " + (data.message || "Hata"), "error");
+    }
+  } catch (err) {
+    showToast("Mod değiştirme hatası: " + err, "error");
+  }
+}
+
+async function resetConfigToDefaults() {
+  if (!confirm("Tüm ayarları varsayılan başlangıç şablonuna sıfırlamak istiyor musunuz?")) return;
+  try {
+    const res = await fetch("/api/config/reset_default", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: currentMode }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast("Ayarlar varsayılanlara sıfırlandı!", "info");
+      loadFullConfigModal();
+      fetchState();
+    } else {
+      showToast("Sıfırlama hatası: " + (data.message || "Hata"), "error");
+    }
+  } catch (err) {
+    showToast("Sıfırlama hatası: " + err, "error");
+  }
+}
+
+async function testApiConnection() {
+  const resultSpan = document.getElementById("api-test-result");
+  const btnTest = document.getElementById("btn-test-api");
+  if (resultSpan) {
+    resultSpan.innerText = "⏳ Test ediliyor...";
+    resultSpan.style.color = "var(--accent)";
+  }
+  if (btnTest) btnTest.disabled = true;
+
+  const apiKey = getStrVal("cfg-api-key");
+  const secretKey = getStrVal("cfg-api-secret");
+  const baseUrl = getStrVal("cfg-api-base-url");
+
+  try {
+    const res = await fetch("/api/test_api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        secret_key: secretKey,
+        base_url: baseUrl,
+      })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const authStatus = data.authenticated ? " (Hesap Yetkisi Doğrulandı)" : " (Genel Veri Erişimi OK)";
+      if (resultSpan) {
+        resultSpan.innerText = `✅ Bağlantı Başarılı!${authStatus}`;
+        resultSpan.style.color = "var(--success)";
+      }
+      showToast("Binance TR API bağlantısı başarılı!", "success");
+    } else {
+      if (resultSpan) {
+        resultSpan.innerText = `❌ ${data.message || "Bağlantı hatası"}`;
+        resultSpan.style.color = "var(--danger)";
+      }
+      showToast("API Test Başarısız: " + (data.message || ""), "error");
+    }
+  } catch (err) {
+    if (resultSpan) {
+      resultSpan.innerText = "❌ Bağlantı hatası: " + err;
+      resultSpan.style.color = "var(--danger)";
+    }
+  } finally {
+    if (btnTest) btnTest.disabled = false;
   }
 }
 
@@ -578,9 +986,42 @@ document.addEventListener("DOMContentLoaded", () => {
   loadReportsList();
   pollingInterval = setInterval(fetchState, 1200);
 
+  // Main Action Buttons
   document.getElementById("btn-start").addEventListener("click", startBot);
   document.getElementById("btn-stop").addEventListener("click", stopBot);
   document.getElementById("btn-save-config").addEventListener("click", saveConfigParams);
+
+  // Modal Buttons & Triggers
+  const btnOpenSettings = document.getElementById("btn-open-settings");
+  if (btnOpenSettings) btnOpenSettings.addEventListener("click", openSettingsModal);
+
+  const btnSaveFullConfig = document.getElementById("btn-save-full-config");
+  if (btnSaveFullConfig) btnSaveFullConfig.addEventListener("click", saveFullConfigModal);
+
+  const btnTestApi = document.getElementById("btn-test-api");
+  if (btnTestApi) btnTestApi.addEventListener("click", testApiConnection);
+
+  // Modal Backdrop Click to Close
+  const modalBackdrop = document.getElementById("modal-settings");
+  if (modalBackdrop) {
+    modalBackdrop.addEventListener("click", (e) => {
+      if (e.target === modalBackdrop) {
+        closeSettingsModal();
+      }
+    });
+  }
+
+  // Settings Tabs Navigation Handlers
+  document.querySelectorAll(".settings-tabs .tab-btn").forEach(tabBtn => {
+    tabBtn.addEventListener("click", () => {
+      document.querySelectorAll(".settings-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".modal-body .tab-pane").forEach(p => p.classList.remove("active"));
+      tabBtn.classList.add("active");
+      const targetId = tabBtn.getAttribute("data-tab");
+      const targetPane = document.getElementById(targetId);
+      if (targetPane) targetPane.classList.add("active");
+    });
+  });
 
   // Hızlı Parite Butonları
   document.querySelectorAll(".btn-pair").forEach(btn => {

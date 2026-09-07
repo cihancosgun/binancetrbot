@@ -65,12 +65,80 @@ def test_auth_and_web_endpoints():
             res_close_single = client.post("/api/close_position", json={"position_id": "non_existent_id"})
             assert res_close_single.status_code == 400
 
-        # 10. Cikis yapma testi (Logout)
+        # 10. Full Config GET API Testi
+        res_full_cfg = client.get("/api/config/full")
+        assert res_full_cfg.status_code == 200
+        cfg_data = res_full_cfg.json()
+        assert cfg_data["status"] == "success"
+        assert "trading" in cfg_data["config"]
+        assert "strategy" in cfg_data["config"]
+        assert "api" in cfg_data["config"]
+        assert "auth" in cfg_data["config"]
+        assert "server" in cfg_data["config"]
+        assert "loaded_config_path" in cfg_data
+        assert "available_files" in cfg_data
+
+        # 11. Full Config POST API Testi
+        update_payload = {
+            "trading": {
+                "budget_per_trade": 150.0,
+                "target_coins_count": 6,
+                "candidate_observation_seconds": 25,
+                "only_uptrend": True,
+                "min_24h_volume_try": 6000000.0,
+            },
+            "strategy": {
+                "take_profit_pct": 1.75,
+                "stop_loss_pct": 0.95,
+                "trailing_stop_pct": 0.35,
+                "enable_partial_tp": True,
+                "partial_tp_pct": 0.70,
+                "partial_tp_ratio": 0.50,
+            },
+            "test": {
+                "duration_minutes": 20,
+            }
+        }
+        res_update = client.post("/api/config/full", json=update_payload)
+        assert res_update.status_code == 200
+        res_update_data = res_update.json()
+        assert res_update_data["status"] == "success"
+        assert bot_instance.config.trading.budget_per_trade == 150.0
+        assert bot_instance.config.trading.target_coins_count == 6
+        assert bot_instance.config.strategy.take_profit_pct == 1.75
+        assert bot_instance.risk_manager.take_profit_pct == 1.75
+        assert bot_instance.risk_manager.partial_tp_pct == 0.70
+        assert bot_instance.config.test.duration_minutes == 20
+
+        # 12. Switch Mode API Testi
+        res_switch = client.post("/api/config/switch_mode", json={"mode": "simulation"})
+        assert res_switch.status_code == 200
+        assert res_switch.json()["status"] == "success"
+
+        # 13. Reset Default Config API Testi
+        res_reset = client.post("/api/config/reset_default", json={"mode": "simulation"})
+        assert res_reset.status_code == 200
+        assert res_reset.json()["status"] == "success"
+
+        # 14. API Connection Test endpoint (Mocking ping, server_time, account_info)
+        with patch("core.binance_client.BinanceTrClient.ping", return_value=True), \
+             patch("core.binance_client.BinanceTrClient.get_server_time", return_value=1700000000000), \
+             patch("core.binance_client.BinanceTrClient.get_account_info", return_value={"code": 0, "data": {"balances": [{"asset": "TRY", "free": "1000", "locked": "0"}]}}):
+            res_test_api = client.post("/api/test_api", json={
+                "api_key": "test_api_key_12345",
+                "secret_key": "test_secret_key_12345",
+                "base_url": "https://www.binance.tr"
+            })
+            assert res_test_api.status_code == 200
+            assert res_test_api.json()["status"] == "success"
+            assert res_test_api.json()["authenticated"] is True
+
+        # 15. Cikis yapma testi (Logout)
         res_logout = client.get("/logout", follow_redirects=False)
         assert res_logout.status_code == 303
         assert "/login" in res_logout.headers["location"]
 
-        print("[OK] Tum Auth, Web API ve Arayuz testleri basariyla gecti!")
+        print("[OK] Tum Auth, Web API, Full Config ve Arayuz testleri basariyla gecti!")
     finally:
         bot_instance.config.trading.mode = original_mode
 
