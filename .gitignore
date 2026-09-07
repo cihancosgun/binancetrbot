@@ -43,6 +43,7 @@ config-test.yaml
 !config.test.example.yaml
 
 # Runtime Data, Logs, Archives & Reports
+data/
 data/*.json
 !data/.gitkeep
 reports/*.html
